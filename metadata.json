@@ -1,0 +1,6 @@
+{
+  "name": "CampusRoute",
+  "description": "Multi-stop school discovery within a 5-mile radius, real-time traffic routing, voice-guided turn-by-turn navigation, offline caching, and cross-device tour sync.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

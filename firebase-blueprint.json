@@ -1,0 +1,163 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User account settings and synced navigation preferences",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Auth UID",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "User display name",
+          "maxLength": 120
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "User email address",
+          "maxLength": 254
+        },
+        "defaultRadiusMiles": {
+          "type": "number",
+          "description": "Default search radius in miles (1 to 15)"
+        },
+        "preferredMapStyle": {
+          "type": "string",
+          "enum": ["daylight", "night", "terrain", "hybrid"],
+          "description": "Preferred map visual theme"
+        },
+        "voiceGuidanceEnabled": {
+          "type": "boolean",
+          "description": "Whether spoken turn-by-turn prompts are enabled"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server last update timestamp"
+        }
+      },
+      "required": [
+        "uid",
+        "defaultRadiusMiles",
+        "preferredMapStyle",
+        "voiceGuidanceEnabled",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "SchoolTour": {
+      "title": "SchoolTour",
+      "description": "A multi-stop school tour itinerary synced across user devices",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "UID of the user who owns this tour",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "title": {
+          "type": "string",
+          "description": "Tour title",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "originName": {
+          "type": "string",
+          "description": "Starting address or current location label",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "originLat": {
+          "type": "number",
+          "description": "Origin latitude"
+        },
+        "originLng": {
+          "type": "number",
+          "description": "Origin longitude"
+        },
+        "radiusMiles": {
+          "type": "number",
+          "description": "Search radius in miles"
+        },
+        "travelMode": {
+          "type": "string",
+          "enum": ["DRIVING", "WALKING", "BICYCLING", "TRANSIT"],
+          "description": "Active navigation travel mode"
+        },
+        "routeObjective": {
+          "type": "string",
+          "enum": ["FASTEST_TRAFFIC", "SHORTEST_DISTANCE"],
+          "description": "Routing optimization objective"
+        },
+        "optimizeOrder": {
+          "type": "boolean",
+          "description": "Whether intermediate stops are automatically reordered"
+        },
+        "roundTrip": {
+          "type": "boolean",
+          "description": "Whether the tour returns to the origin"
+        },
+        "stops": {
+          "type": "array",
+          "description": "Ordered list of school stops (max 12 stops)"
+        },
+        "totalDistanceMeters": {
+          "type": "number",
+          "description": "Total computed route distance in meters"
+        },
+        "totalDurationMillis": {
+          "type": "number",
+          "description": "Total computed route duration in milliseconds"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server last update timestamp"
+        }
+      },
+      "required": [
+        "ownerId",
+        "title",
+        "originName",
+        "originLat",
+        "originLng",
+        "radiusMiles",
+        "travelMode",
+        "routeObjective",
+        "optimizeOrder",
+        "roundTrip",
+        "stops",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Owner-only user profile and navigation preferences"
+    },
+    "/users/{userId}/tours/{tourId}": {
+      "schema": { "$ref": "#/entities/SchoolTour" },
+      "description": "Owner-only synced multi-stop school tours"
+    }
+  }
+}

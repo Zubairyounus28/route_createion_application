@@ -1,0 +1,153 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidMapStyle(style) {
+      return style is string && style in ['daylight', 'night', 'terrain', 'hybrid'];
+    }
+
+    function isValidTravelMode(mode) {
+      return mode is string && mode in ['DRIVING', 'WALKING', 'BICYCLING', 'TRANSIT'];
+    }
+
+    function isValidRouteObjective(obj) {
+      return obj is string && obj in ['FASTEST_TRAFFIC', 'SHORTEST_DISTANCE'];
+    }
+
+    function isValidStop(stop) {
+      return stop is map
+        && stop.keys().hasAll(['placeId', 'name', 'address', 'lat', 'lng'])
+        && stop.keys().hasOnly(['placeId', 'name', 'address', 'lat', 'lng', 'rating', 'primaryType'])
+        && stop.placeId is string && stop.placeId.size() >= 1 && stop.placeId.size() <= 200
+        && stop.name is string && stop.name.size() >= 1 && stop.name.size() <= 160
+        && stop.address is string && stop.address.size() <= 300
+        && stop.lat is number && stop.lat >= -90 && stop.lat <= 90
+        && stop.lng is number && stop.lng >= -180 && stop.lng <= 180
+        && (!('rating' in stop) || (stop.rating is number && stop.rating >= 0 && stop.rating <= 5))
+        && (!('primaryType' in stop) || (stop.primaryType is string && stop.primaryType.size() <= 64));
+    }
+
+    function isValidUserProfile(data, userId) {
+      return data.keys().hasAll(['uid', 'defaultRadiusMiles', 'preferredMapStyle', 'voiceGuidanceEnabled', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'displayName', 'email', 'defaultRadiusMiles', 'preferredMapStyle', 'voiceGuidanceEnabled', 'createdAt', 'updatedAt'])
+        && data.uid is string && data.uid == userId && data.uid == request.auth.uid && isValidId(data.uid)
+        && (!('displayName' in data) || (data.displayName is string && data.displayName.size() <= 120))
+        && (!('email' in data) || (data.email is string && data.email.size() <= 254))
+        && data.defaultRadiusMiles is number && data.defaultRadiusMiles >= 1 && data.defaultRadiusMiles <= 15
+        && isValidMapStyle(data.preferredMapStyle)
+        && data.voiceGuidanceEnabled is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidSchoolTour(data, userId) {
+      return data.keys().hasAll([
+          'ownerId', 'title', 'originName', 'originLat', 'originLng',
+          'radiusMiles', 'travelMode', 'routeObjective', 'optimizeOrder',
+          'roundTrip', 'stops', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId', 'title', 'originName', 'originLat', 'originLng',
+          'radiusMiles', 'travelMode', 'routeObjective', 'optimizeOrder',
+          'roundTrip', 'stops', 'totalDistanceMeters', 'totalDurationMillis',
+          'createdAt', 'updatedAt'
+        ])
+        && data.ownerId is string && data.ownerId == userId && data.ownerId == request.auth.uid && isValidId(data.ownerId)
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 120
+        && data.originName is string && data.originName.size() >= 1 && data.originName.size() <= 240
+        && data.originLat is number && data.originLat >= -90 && data.originLat <= 90
+        && data.originLng is number && data.originLng >= -180 && data.originLng <= 180
+        && data.radiusMiles is number && data.radiusMiles >= 1 && data.radiusMiles <= 15
+        && isValidTravelMode(data.travelMode)
+        && isValidRouteObjective(data.routeObjective)
+        && data.optimizeOrder is bool
+        && data.roundTrip is bool
+        && data.stops is list && data.stops.size() <= 12
+        && (data.stops.size() == 0 || isValidStop(data.stops[0]))
+        && (!('totalDistanceMeters' in data) || (data.totalDistanceMeters is number && data.totalDistanceMeters >= 0 && data.totalDistanceMeters <= 10000000))
+        && (!('totalDurationMillis' in data) || (data.totalDurationMillis is number && data.totalDurationMillis >= 0 && data.totalDurationMillis <= 864000000))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    match /users/{userId} {
+      allow get: if isValidId(userId) && isOwner(userId);
+      allow list: if false;
+      allow create: if isVerifiedUser()
+        && isValidId(userId)
+        && isOwner(userId)
+        && isValidUserProfile(incoming(), userId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isVerifiedUser()
+        && isValidId(userId)
+        && isOwner(userId)
+        && isValidUserProfile(incoming(), userId)
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'displayName', 'email', 'defaultRadiusMiles', 'preferredMapStyle', 'voiceGuidanceEnabled', 'updatedAt'
+        ]);
+      allow delete: if isVerifiedUser() && isValidId(userId) && isOwner(userId);
+
+      match /tours/{tourId} {
+        allow get: if isValidId(userId) && isValidId(tourId) && isOwner(userId);
+        allow list: if isValidId(userId) && isOwner(userId) && resource.data.ownerId == request.auth.uid;
+        allow create: if isVerifiedUser()
+          && isValidId(userId)
+          && isValidId(tourId)
+          && isOwner(userId)
+          && isValidSchoolTour(incoming(), userId)
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && existsAfter(/databases/$(database)/documents/users/$(userId));
+        allow update: if isVerifiedUser()
+          && isValidId(userId)
+          && isValidId(tourId)
+          && isOwner(userId)
+          && isValidSchoolTour(incoming(), userId)
+          && incoming().ownerId == existing().ownerId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && exists(/databases/$(database)/documents/users/$(userId))
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'title', 'originName', 'originLat', 'originLng', 'radiusMiles',
+              'travelMode', 'routeObjective', 'optimizeOrder', 'roundTrip',
+              'stops', 'totalDistanceMeters', 'totalDurationMillis', 'updatedAt'
+            ])
+          );
+        allow delete: if isVerifiedUser() && isValidId(userId) && isValidId(tourId) && isOwner(userId);
+      }
+    }
+  }
+}
