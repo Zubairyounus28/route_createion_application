@@ -525,7 +525,7 @@ export const SidebarTour: React.FC<SidebarTourProps> = ({
             <button
               type="button"
               onClick={
-                origin?.isCurrentLocation
+                hasCustomStartLocation
                   ? onStartNavigation
                   : onStartLiveGpsNavigation
               }

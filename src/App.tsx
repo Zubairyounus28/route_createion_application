@@ -10,11 +10,13 @@ import {
   LogIn,
   LogOut,
   Map as MapIcon,
+  MapPinPlus,
   Navigation,
 } from 'lucide-react';
 import {AppFooter} from './components/AppFooter';
 import {OfflineIndicator} from './components/OfflineIndicator';
 import {SchoolMapCanvas} from './components/SchoolMapCanvas';
+import {SidebarAddStops} from './components/SidebarAddStops';
 import {SidebarDiscover} from './components/SidebarDiscover';
 import {SidebarNavigation} from './components/SidebarNavigation';
 import {SidebarSaved} from './components/SidebarSaved';
@@ -63,7 +65,7 @@ import type {
   TravelModeOption,
 } from './types/navigation';
 
-type SidebarTab = 'discover' | 'tour' | 'navigation' | 'saved';
+type SidebarTab = 'discover' | 'stops' | 'tour' | 'navigation' | 'saved';
 type SheetSnap = 'peek' | 'half' | 'full';
 
 const MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
@@ -699,7 +701,7 @@ function CampusRouteWorkspace({
   }, [allSteps, beginNavigationSession]);
 
   const handleStartLiveGpsNavigation = useCallback(() => {
-    if (!myLocation?.isCurrentLocation && isOnline && 'geolocation' in navigator) {
+    if (!myLocation && isOnline && 'geolocation' in navigator) {
       pendingLiveStartRef.current = true;
       setIsLocating(true);
       navigator.geolocation.getCurrentPosition(
@@ -727,7 +729,7 @@ function CampusRouteWorkspace({
       return;
     }
     beginNavigationSession(allSteps);
-  }, [myLocation?.isCurrentLocation, isOnline, allSteps, beginNavigationSession]);
+  }, [myLocation, isOnline, allSteps, beginNavigationSession]);
 
   useEffect(() => {
     if (pendingLiveStartRef.current && !isComputing && allSteps.length > 0) {
@@ -980,6 +982,57 @@ function CampusRouteWorkspace({
         />
       )}
 
+      {activeTab === 'stops' && (
+        <SidebarAddStops
+          searchArea={searchArea}
+          myLocation={myLocation}
+          onUseCurrentLocation={handleUseCurrentLocation}
+          isLocating={isLocating}
+          onGoToDiscover={() => {
+            setActiveTab('discover');
+            setSheetSnap('half');
+          }}
+          radiusMiles={radiusMiles}
+          targetCategory={targetCategory}
+          onChangeTargetCategory={setTargetCategory}
+          levelFilter={levelFilter}
+          onChangeLevelFilter={setLevelFilter}
+          searchQuery={searchQuery}
+          onChangeSearchQuery={setSearchQuery}
+          schools={schools}
+          isSearching={isSearching}
+          searchError={searchError}
+          onRefreshSearch={() =>
+            void searchNearbySchools(
+              {lat: searchArea.lat, lng: searchArea.lng},
+              radiusMiles,
+              levelFilter,
+              targetCategory,
+              searchQuery
+            )
+          }
+          tourStops={tourStops}
+          onToggleStop={handleToggleStop}
+          onRemoveStop={handleRemoveStop}
+          onClearStops={() => {
+            setTourStops([]);
+            setIsNavigating(false);
+          }}
+          focusedSchoolId={focusedSchoolId}
+          onFocusSchool={id => {
+            setFocusedSchoolId(id);
+            if (sheetSnap === 'full') {
+              setSheetSnap('half');
+            }
+          }}
+          onOpenTour={() => {
+            setActiveTab('tour');
+            setSheetSnap('half');
+          }}
+          isOnline={isOnline}
+        />
+      )}
+
       {activeTab === 'tour' && (
         <SidebarTour
           origin={routeOrigin}
@@ -1107,7 +1160,14 @@ function CampusRouteWorkspace({
           {(
             [
               {id: 'discover', label: 'Discover'},
-              {id: 'tour', label: `Tour Stops (${tourStops.length})`},
+              {
+                id: 'stops',
+                label:
+                  tourStops.length > 0
+                    ? `Add Stops (${tourStops.length})`
+                    : 'Add Stops',
+              },
+              {id: 'tour', label: `Tour (${tourStops.length})`},
               {id: 'navigation', label: 'Turn-by-Turn'},
               {id: 'saved', label: 'Saved Routes'},
             ] as {id: SidebarTab; label: string}[]
@@ -1329,15 +1389,22 @@ function CampusRouteWorkspace({
         aria-label="Mobile navigation"
         className="md:hidden shrink-0 border-t border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-950/95 backdrop-blur pb-safe z-30"
       >
-        <div className="grid grid-cols-5 h-14">
+        <div className="grid grid-cols-6 h-14">
           {(
             [
               {id: 'map', label: 'Map', icon: MapIcon},
               {id: 'discover', label: 'Discover', icon: Compass},
               {
+                id: 'stops',
+                label: 'Add Stops',
+                icon: MapPinPlus,
+                badge: tourStops.length > 0 ? tourStops.length : undefined,
+              },
+              {
                 id: 'tour',
-                label: tourStops.length > 0 ? `Tour (${tourStops.length})` : 'Tour',
+                label: 'Tour',
                 icon: ListOrdered,
+                badge: tourStops.length > 0 ? tourStops.length : undefined,
               },
               {id: 'navigation', label: 'Steps', icon: Navigation},
               {id: 'saved', label: 'Saved', icon: Bookmark},
@@ -1345,6 +1412,7 @@ function CampusRouteWorkspace({
               id: 'map' | SidebarTab;
               label: string;
               icon: React.ComponentType<{className?: string}>;
+              badge?: number;
             }[]
           ).map(item => {
             const Icon = item.icon;
@@ -1366,14 +1434,21 @@ function CampusRouteWorkspace({
                     );
                   }
                 }}
-                className={`flex flex-col items-center justify-center gap-0.5 min-h-[48px] px-1 transition-colors ${
+                className={`flex flex-col items-center justify-center gap-0.5 min-h-[48px] px-0.5 transition-colors ${
                   isActive
                     ? 'text-teal-600 dark:text-teal-400 font-semibold'
                     : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                 }`}
               >
-                <Icon className="w-5 h-5" />
-                <span className="text-[11px] leading-none whitespace-nowrap">
+                <span className="relative inline-flex items-center justify-center">
+                  <Icon className="w-5 h-5" />
+                  {typeof item.badge === 'number' && (
+                    <span className="absolute -top-1.5 -right-2.5 min-w-[16px] h-4 px-1 rounded-full bg-teal-600 text-white text-[9px] font-mono font-bold flex items-center justify-center leading-none">
+                      {item.badge}
+                    </span>
+                  )}
+                </span>
+                <span className="text-[10px] leading-none whitespace-nowrap tracking-tight">
                   {item.label}
                 </span>
               </button>
