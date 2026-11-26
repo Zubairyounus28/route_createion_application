@@ -68,12 +68,21 @@ type SheetSnap = 'peek' | 'half' | 'full';
 
 const MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
 
-const DEFAULT_ORIGIN: OriginPoint = {
-  name: 'Palo Alto, CA',
-  lat: 37.4419,
-  lng: -122.143,
+const DEFAULT_SEARCH_AREA: OriginPoint = {
+  name: 'Karachi, Pakistan',
+  lat: 24.8607,
+  lng: 67.0011,
   isCurrentLocation: false,
 };
+
+function getInitialValidSession() {
+  const last = loadLastActiveSession();
+  if (!last) return null;
+  if (last.originName === 'Palo Alto, CA' && last.stops.length === 0) {
+    return null;
+  }
+  return last;
+}
 
 function CampusRouteWorkspace({
   quotaExceeded,
@@ -92,32 +101,55 @@ function CampusRouteWorkspace({
     getOfflineTours()
   );
 
-  // Origin & Multi-Target Discovery Filters
-  const [origin, setOrigin] = useState<OriginPoint>(() => {
-    const last = loadLastActiveSession();
+  // Target Area (where to find schools/places) & User Starting Location (route origin)
+  const [searchArea, setSearchArea] = useState<OriginPoint>(() => {
+    const last = getInitialValidSession();
     if (last) {
+      if (last.stops.length > 0 && last.originName.startsWith('My ')) {
+        return {
+          name: last.stops[0].name,
+          lat: last.stops[0].lat,
+          lng: last.stops[0].lng,
+          isCurrentLocation: false,
+        };
+      }
+      if (!last.originName.startsWith('My ')) {
+        return {
+          name: last.originName,
+          lat: last.originLat,
+          lng: last.originLng,
+          isCurrentLocation: false,
+        };
+      }
+    }
+    return DEFAULT_SEARCH_AREA;
+  });
+  const [myLocation, setMyLocation] = useState<OriginPoint | null>(() => {
+    const last = getInitialValidSession();
+    if (last && last.stops.length > 0) {
       return {
         name: last.originName,
         lat: last.originLat,
         lng: last.originLng,
+        isCurrentLocation: last.originName.startsWith('My '),
       };
     }
-    return DEFAULT_ORIGIN;
+    return null;
   });
   const [isLocating, setIsLocating] = useState(false);
   const [radiusMiles, setRadiusMiles] = useState<number>(() => {
-    const last = loadLastActiveSession();
+    const last = getInitialValidSession();
     return last?.radiusMiles ?? 5;
   });
   const [targetCategory, setTargetCategory] =
-    useState<TargetCategory>('all_targets');
+    useState<TargetCategory>('schools');
   const [levelFilter, setLevelFilter] = useState<SchoolLevelFilter>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [focusedSchoolId, setFocusedSchoolId] = useState<string | null>(null);
 
   // Tour Planning State
   const [tourStops, setTourStops] = useState<TourStop[]>(() => {
-    const last = loadLastActiveSession();
+    const last = getInitialValidSession();
     return last?.stops ?? [];
   });
   const [travelMode, setTravelMode] = useState<TravelModeOption>(() => {
@@ -163,6 +195,9 @@ function CampusRouteWorkspace({
   const pendingLiveStartRef = useRef<boolean>(false);
   const touchStartYRef = useRef<number | null>(null);
 
+  const routeOrigin = myLocation ?? searchArea;
+  const hasCustomStartLocation = Boolean(myLocation);
+
   // Google Maps Hooks
   const {
     schools,
@@ -181,7 +216,7 @@ function CampusRouteWorkspace({
     distantStops,
     recompute,
   } = useMultiStopRoute({
-    origin,
+    origin: routeOrigin,
     stops: tourStops,
     travelMode,
     routeObjective,
@@ -240,9 +275,9 @@ function CampusRouteWorkspace({
     saveLastActiveSession({
       id: activeTourId || 'last_active',
       title: tourTitle,
-      originName: origin.name,
-      originLat: origin.lat,
-      originLng: origin.lng,
+      originName: routeOrigin.name,
+      originLat: routeOrigin.lat,
+      originLng: routeOrigin.lng,
       radiusMiles,
       travelMode,
       routeObjective,
@@ -255,7 +290,7 @@ function CampusRouteWorkspace({
   }, [
     activeTourId,
     tourTitle,
-    origin,
+    routeOrigin,
     radiusMiles,
     travelMode,
     routeObjective,
@@ -301,13 +336,13 @@ function CampusRouteWorkspace({
     return () => unsub();
   }, [authReady, user]);
 
-  // Search nearby / text targets automatically when parameters change (debounced for text input)
+  // Search nearby / text targets around selected searchArea (debounced for text input)
   useEffect(() => {
     if (!isOnline || isRerouting) return;
     const delay = searchQuery.trim().length >= 2 ? 360 : 0;
     const timer = window.setTimeout(() => {
       void searchNearbySchools(
-        {lat: origin.lat, lng: origin.lng},
+        {lat: searchArea.lat, lng: searchArea.lng},
         radiusMiles,
         levelFilter,
         targetCategory,
@@ -318,8 +353,8 @@ function CampusRouteWorkspace({
   }, [
     isOnline,
     isRerouting,
-    origin.lat,
-    origin.lng,
+    searchArea.lat,
+    searchArea.lng,
     radiusMiles,
     levelFilter,
     targetCategory,
@@ -327,7 +362,7 @@ function CampusRouteWorkspace({
     searchNearbySchools,
   ]);
 
-  // Request user's current GPS position
+  // Request user's current GPS position as their Starting Location (preserves Target Area)
   const handleUseCurrentLocation = useCallback(() => {
     if (!('geolocation' in navigator)) return;
     setIsLocating(true);
@@ -337,7 +372,7 @@ function CampusRouteWorkspace({
           lat: pos.coords.latitude,
           lng: pos.coords.longitude,
         };
-        setOrigin({
+        setMyLocation({
           name: 'My Current Location',
           lat: coords.lat,
           lng: coords.lng,
@@ -351,31 +386,6 @@ function CampusRouteWorkspace({
       },
       {enableHighAccuracy: true, timeout: 8000}
     );
-  }, []);
-
-  // Attempt initial GPS lock once on mount if no prior saved session
-  useEffect(() => {
-    if (!loadLastActiveSession() && 'geolocation' in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        pos => {
-          const coords = {
-            lat: pos.coords.latitude,
-            lng: pos.coords.longitude,
-          };
-          setOrigin({
-            name: 'My Current Location',
-            lat: coords.lat,
-            lng: coords.lng,
-            isCurrentLocation: true,
-          });
-          setUserLiveLocation(coords);
-        },
-        () => {
-          // Keep DEFAULT_ORIGIN seamlessly
-        },
-        {timeout: 5000}
-      );
-    }
   }, []);
 
   // Flatten turn-by-turn steps across legs
@@ -546,7 +556,7 @@ function CampusRouteWorkspace({
             lastRerouteAtRef.current = now;
             setIsRerouting(true);
             voice.speak('Off route. Recalculating directions.');
-            setOrigin({
+            setMyLocation({
               name: 'My Live GPS',
               lat: currentPos.lat,
               lng: currentPos.lng,
@@ -689,7 +699,7 @@ function CampusRouteWorkspace({
   }, [allSteps, beginNavigationSession]);
 
   const handleStartLiveGpsNavigation = useCallback(() => {
-    if (!origin.isCurrentLocation && isOnline && 'geolocation' in navigator) {
+    if (!myLocation?.isCurrentLocation && isOnline && 'geolocation' in navigator) {
       pendingLiveStartRef.current = true;
       setIsLocating(true);
       navigator.geolocation.getCurrentPosition(
@@ -699,7 +709,7 @@ function CampusRouteWorkspace({
             lng: pos.coords.longitude,
           };
           setUserLiveLocation(coords);
-          setOrigin({
+          setMyLocation({
             name: 'My Live GPS',
             lat: coords.lat,
             lng: coords.lng,
@@ -717,7 +727,7 @@ function CampusRouteWorkspace({
       return;
     }
     beginNavigationSession(allSteps);
-  }, [origin.isCurrentLocation, isOnline, allSteps, beginNavigationSession]);
+  }, [myLocation?.isCurrentLocation, isOnline, allSteps, beginNavigationSession]);
 
   useEffect(() => {
     if (pendingLiveStartRef.current && !isComputing && allSteps.length > 0) {
@@ -747,9 +757,9 @@ function CampusRouteWorkspace({
     const nextOffline = saveOfflineTour({
       id: localId,
       title: tourTitle.trim() || 'Multi-Stop Route',
-      originName: origin.name,
-      originLat: origin.lat,
-      originLng: origin.lng,
+      originName: routeOrigin.name,
+      originLat: routeOrigin.lat,
+      originLng: routeOrigin.lng,
       radiusMiles,
       travelMode,
       routeObjective,
@@ -768,9 +778,9 @@ function CampusRouteWorkspace({
         const savedId = await saveSyncedTour(user.uid, {
           id: localId,
           title: tourTitle.trim() || 'Multi-Stop Route',
-          originName: origin.name,
-          originLat: origin.lat,
-          originLng: origin.lng,
+          originName: routeOrigin.name,
+          originLat: routeOrigin.lat,
+          originLng: routeOrigin.lng,
           radiusMiles,
           travelMode,
           routeObjective,
@@ -796,7 +806,7 @@ function CampusRouteWorkspace({
   }, [
     activeTourId,
     tourTitle,
-    origin,
+    routeOrigin,
     radiusMiles,
     travelMode,
     routeObjective,
@@ -811,11 +821,27 @@ function CampusRouteWorkspace({
   const handleLoadSyncedTour = useCallback((tour: SyncedSchoolTour) => {
     setActiveTourId(tour.id);
     setTourTitle(tour.title);
-    setOrigin({
+    setMyLocation({
       name: tour.originName,
       lat: tour.originLat,
       lng: tour.originLng,
+      isCurrentLocation: tour.originName.startsWith('My '),
     });
+    if (tour.stops.length > 0) {
+      setSearchArea({
+        name: tour.stops[0].name,
+        lat: tour.stops[0].lat,
+        lng: tour.stops[0].lng,
+        isCurrentLocation: false,
+      });
+    } else if (!tour.originName.startsWith('My ')) {
+      setSearchArea({
+        name: tour.originName,
+        lat: tour.originLat,
+        lng: tour.originLng,
+        isCurrentLocation: false,
+      });
+    }
     setRadiusMiles(tour.radiusMiles);
     setTravelMode(tour.travelMode);
     setRouteObjective(tour.routeObjective);
@@ -831,11 +857,27 @@ function CampusRouteWorkspace({
     (tour: OfflineCachedTour) => {
       setActiveTourId(tour.id);
       setTourTitle(tour.title);
-      setOrigin({
+      setMyLocation({
         name: tour.originName,
         lat: tour.originLat,
         lng: tour.originLng,
+        isCurrentLocation: tour.originName.startsWith('My '),
       });
+      if (tour.stops.length > 0) {
+        setSearchArea({
+          name: tour.stops[0].name,
+          lat: tour.stops[0].lat,
+          lng: tour.stops[0].lng,
+          isCurrentLocation: false,
+        });
+      } else if (!tour.originName.startsWith('My ')) {
+        setSearchArea({
+          name: tour.originName,
+          lat: tour.originLat,
+          lng: tour.originLng,
+          isCurrentLocation: false,
+        });
+      }
       setRadiusMiles(tour.radiusMiles);
       setTravelMode(tour.travelMode);
       setRouteObjective(tour.routeObjective);
@@ -890,10 +932,14 @@ function CampusRouteWorkspace({
     <>
       {activeTab === 'discover' && (
         <SidebarDiscover
-          origin={origin}
-          onSelectOrigin={next => {
-            setOrigin(next);
+          searchArea={searchArea}
+          onSelectSearchArea={next => {
+            setSearchArea(next);
             setFocusedSchoolId(null);
+          }}
+          myLocation={myLocation}
+          onSelectMyLocation={next => {
+            setMyLocation(next);
           }}
           onUseCurrentLocation={handleUseCurrentLocation}
           isLocating={isLocating}
@@ -910,7 +956,7 @@ function CampusRouteWorkspace({
           searchError={searchError}
           onRefreshSearch={() =>
             void searchNearbySchools(
-              {lat: origin.lat, lng: origin.lng},
+              {lat: searchArea.lat, lng: searchArea.lng},
               radiusMiles,
               levelFilter,
               targetCategory,
@@ -936,7 +982,12 @@ function CampusRouteWorkspace({
 
       {activeTab === 'tour' && (
         <SidebarTour
-          origin={origin}
+          origin={routeOrigin}
+          searchArea={searchArea}
+          hasCustomStartLocation={hasCustomStartLocation}
+          onSelectMyLocation={next => setMyLocation(next)}
+          onUseCurrentLocation={handleUseCurrentLocation}
+          isLocating={isLocating}
           stops={tourStops}
           computedRoute={computedRoute}
           isComputing={isComputing}
@@ -1112,7 +1163,9 @@ function CampusRouteWorkspace({
         {/* Persistent Full-Height Interactive Map Viewport */}
         <section className="flex-1 h-full relative min-h-0">
           <SchoolMapCanvas
-            origin={origin}
+            origin={routeOrigin}
+            searchArea={searchArea}
+            hasCustomStartLocation={hasCustomStartLocation}
             radiusMiles={radiusMiles}
             schools={schools}
             tourStops={tourStops}
@@ -1225,7 +1278,8 @@ function CampusRouteWorkspace({
                     </div>
                   ) : (
                     <div className="text-xs font-semibold text-slate-900 dark:text-white truncate">
-                      {schools.length} nearby places · {origin.name}
+                      {schools.length} places in {searchArea.name}
+                      {!hasCustomStartLocation ? ' · Set your location' : ''}
                     </div>
                   )}
                 </button>
@@ -1367,7 +1421,7 @@ export default function App() {
     <APIProvider
       apiKey={MAPS_API_KEY}
       language="en"
-      region="US"
+      region="PK"
       libraries={['places', 'routes', 'geometry', 'marker']}
     >
       <CampusRouteWorkspace quotaExceeded={quotaExceeded} />

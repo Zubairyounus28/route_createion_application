@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import {
   formatPlaceTypeLabel,
+  haversineMeters,
   metersToMilesText,
   metersToTurnCue,
   millisToDurationText,
@@ -48,6 +49,8 @@ import {ManeuverIcon} from './ManeuverIcon';
 
 interface SchoolMapCanvasProps {
   origin: OriginPoint | null;
+  searchArea: OriginPoint | null;
+  hasCustomStartLocation: boolean;
   radiusMiles: number;
   schools: SchoolPlace[];
   tourStops: TourStop[];
@@ -84,7 +87,7 @@ interface SchoolMapCanvasProps {
   showMobileQuickLaunch?: boolean;
 }
 
-const DEFAULT_CENTER: LatLng = {lat: 37.4419, lng: -122.143};
+const DEFAULT_CENTER: LatLng = {lat: 24.8607, lng: 67.0011};
 
 const MAP_STYLE_OPTIONS: {id: MapStyleId; label: string}[] = [
   {id: 'daylight', label: 'Daylight'},
@@ -114,6 +117,8 @@ function getCategoryPinColor(primaryType?: string, isFocused = false): string {
 
 export const SchoolMapCanvas: React.FC<SchoolMapCanvasProps> = ({
   origin,
+  searchArea,
+  hasCustomStartLocation,
   radiusMiles,
   schools,
   tourStops,
@@ -223,14 +228,15 @@ export const SchoolMapCanvas: React.FC<SchoolMapCanvasProps> = ({
     };
   }, [map, isNavigating, gpsFollowEnabled, onDisableGpsFollow]);
 
-  // Pan map when origin changes (outside active live GPS follow)
+  // Pan map when target searchArea changes (outside active live GPS follow)
+  const circleCenter = searchArea || origin;
   useEffect(() => {
-    if (!map || !origin || (isNavigating && gpsFollowEnabled)) return;
-    map.panTo({lat: origin.lat, lng: origin.lng});
+    if (!map || !circleCenter || (isNavigating && gpsFollowEnabled)) return;
+    map.panTo({lat: circleCenter.lat, lng: circleCenter.lng});
     if ((map.getZoom() ?? 12) < 11) {
       map.setZoom(12);
     }
-  }, [map, origin?.lat, origin?.lng, isNavigating, gpsFollowEnabled]);
+  }, [map, circleCenter?.lat, circleCenter?.lng, isNavigating, gpsFollowEnabled]);
 
   // Live GPS camera follow during active navigation
   useEffect(() => {
@@ -252,9 +258,9 @@ export const SchoolMapCanvas: React.FC<SchoolMapCanvasProps> = ({
     travelMode,
   ]);
 
-  // Draw radius circle around origin
+  // Draw radius circle around selected target searchArea
   useEffect(() => {
-    if (!map || !mapsLib || !origin) {
+    if (!map || !mapsLib || !circleCenter) {
       if (circleRef.current) {
         circleRef.current.setMap(null);
         circleRef.current = null;
@@ -265,7 +271,7 @@ export const SchoolMapCanvas: React.FC<SchoolMapCanvasProps> = ({
     if (!circleRef.current) {
       circleRef.current = new mapsLib.Circle({
         map,
-        center: {lat: origin.lat, lng: origin.lng},
+        center: {lat: circleCenter.lat, lng: circleCenter.lng},
         radius: radiusMiles * 1609.344,
         strokeColor: '#0D9488',
         strokeOpacity: 0.65,
@@ -275,7 +281,7 @@ export const SchoolMapCanvas: React.FC<SchoolMapCanvasProps> = ({
         clickable: false,
       });
     } else {
-      circleRef.current.setCenter({lat: origin.lat, lng: origin.lng});
+      circleRef.current.setCenter({lat: circleCenter.lat, lng: circleCenter.lng});
       circleRef.current.setRadius(radiusMiles * 1609.344);
       circleRef.current.setMap(map);
     }
@@ -285,7 +291,7 @@ export const SchoolMapCanvas: React.FC<SchoolMapCanvasProps> = ({
         circleRef.current.setMap(null);
       }
     };
-  }, [map, mapsLib, origin?.lat, origin?.lng, radiusMiles]);
+  }, [map, mapsLib, circleCenter?.lat, circleCenter?.lng, radiusMiles]);
 
   // Manage live TrafficLayer
   useEffect(() => {
@@ -406,7 +412,7 @@ export const SchoolMapCanvas: React.FC<SchoolMapCanvasProps> = ({
   return (
     <div className="relative w-full h-full min-h-[260px] bg-slate-200 dark:bg-slate-900">
       <GoogleMap
-        defaultCenter={origin ? {lat: origin.lat, lng: origin.lng} : DEFAULT_CENTER}
+        defaultCenter={circleCenter ? {lat: circleCenter.lat, lng: circleCenter.lng} : DEFAULT_CENTER}
         defaultZoom={12}
         mapId="DEMO_MAP_ID"
         colorScheme={colorScheme}
@@ -420,18 +426,41 @@ export const SchoolMapCanvas: React.FC<SchoolMapCanvasProps> = ({
         internalUsageAttributionIds={['gmp_mcp_codeassist_v1_aistudio']}
         style={{width: '100%', height: '100%'}}
       >
-        {/* Origin Pin */}
+        {/* Route Starting Location Pin (User Location) */}
         {origin && (
           <AdvancedMarker
             position={{lat: origin.lat, lng: origin.lng}}
-            title={`Start: ${origin.name}`}
-            zIndex={40}
+            title={
+              hasCustomStartLocation
+                ? `Your Start: ${origin.name}`
+                : `Area Center: ${origin.name}`
+            }
+            zIndex={42}
           >
-            <div className="flex items-center justify-center w-8 h-8 rounded-full bg-slate-900 text-white border-2 border-white shadow-md">
+            <div
+              className={`flex items-center justify-center w-8 h-8 rounded-full text-white border-2 border-white shadow-md ${
+                hasCustomStartLocation ? 'bg-teal-700' : 'bg-slate-900'
+              }`}
+            >
               <MapPin className="w-4 h-4" />
             </div>
           </AdvancedMarker>
         )}
+
+        {/* Distinct Target Search Area Pin when different from User's Start Location */}
+        {searchArea &&
+          origin &&
+          haversineMeters(searchArea, origin) > 100 && (
+            <AdvancedMarker
+              position={{lat: searchArea.lat, lng: searchArea.lng}}
+              title={`Target Area: ${searchArea.name}`}
+              zIndex={35}
+            >
+              <div className="flex items-center justify-center w-7 h-7 rounded-full bg-slate-800/90 text-teal-300 border-2 border-white shadow">
+                <Crosshair className="w-3.5 h-3.5" />
+              </div>
+            </AdvancedMarker>
+          )}
 
         {/* Live Car / Bike GPS Position Puck with Compass Heading */}
         {userLiveLocation && (

@@ -6,6 +6,7 @@ import {
   Bus,
   Car,
   Cloud,
+  Crosshair,
   Footprints,
   Loader2,
   MapPin,
@@ -28,9 +29,15 @@ import type {
   TourStop,
   TravelModeOption,
 } from '../types/navigation';
+import {AreaSearchInput} from './AreaSearchInput';
 
 interface SidebarTourProps {
   origin: OriginPoint | null;
+  searchArea: OriginPoint;
+  hasCustomStartLocation: boolean;
+  onSelectMyLocation: (loc: OriginPoint) => void;
+  onUseCurrentLocation: () => void;
+  isLocating: boolean;
   stops: TourStop[];
   computedRoute: ComputedTourRoute | null;
   isComputing: boolean;
@@ -62,6 +69,11 @@ interface SidebarTourProps {
 
 export const SidebarTour: React.FC<SidebarTourProps> = ({
   origin,
+  searchArea,
+  hasCustomStartLocation,
+  onSelectMyLocation,
+  onUseCurrentLocation,
+  isLocating,
   stops,
   computedRoute,
   isComputing,
@@ -92,6 +104,7 @@ export const SidebarTour: React.FC<SidebarTourProps> = ({
 }) => {
   const [confirmClear, setConfirmClear] = useState(false);
   const [showRouteOptions, setShowRouteOptions] = useState(false);
+  const [editingStartLocation, setEditingStartLocation] = useState(false);
 
   const displayedStops =
     computedRoute?.orderedStops.length ? computedRoute.orderedStops : stops;
@@ -289,6 +302,99 @@ export const SidebarTour: React.FC<SidebarTourProps> = ({
 
       {/* Ordered Itinerary List */}
       <div className="flex-1 overflow-y-auto min-h-0">
+        {/* Your Starting Location Card / Row */}
+        <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/40 space-y-2">
+          {!hasCustomStartLocation ? (
+            <>
+              <div>
+                <div className="text-xs font-semibold text-slate-900 dark:text-slate-100">
+                  Where is your location?
+                </div>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                  Previewing from {searchArea.name}. Set your location to start the route from where you are:
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={onUseCurrentLocation}
+                  disabled={isLocating}
+                  className="flex-1 inline-flex items-center justify-center gap-1.5 min-h-[38px] px-2.5 py-1.5 rounded-md bg-teal-600 hover:bg-teal-700 text-white text-xs font-medium disabled:opacity-50 transition-colors whitespace-nowrap"
+                >
+                  {isLocating ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Crosshair className="w-3.5 h-3.5" />
+                  )}
+                  Use My GPS
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditingStartLocation(v => !v)}
+                  className="flex-1 inline-flex items-center justify-center gap-1.5 min-h-[38px] px-2.5 py-1.5 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-medium transition-colors whitespace-nowrap"
+                >
+                  <MapPin className="w-3.5 h-3.5 text-teal-600" />
+                  Enter Location
+                </button>
+              </div>
+            </>
+          ) : (
+            origin && (
+              <div className="flex items-center gap-2.5">
+                <div className="w-6 h-6 rounded-full bg-slate-900 dark:bg-slate-700 text-white flex items-center justify-center shrink-0">
+                  <MapPin className="w-3.5 h-3.5" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs font-semibold text-slate-900 dark:text-slate-100 truncate">
+                    Start: {origin.name}
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={onUseCurrentLocation}
+                    disabled={isLocating}
+                    title="Use current GPS"
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-[11px] font-medium text-teal-700 dark:text-teal-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+                  >
+                    {isLocating ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <Crosshair className="w-3 h-3" />
+                    )}
+                    GPS
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditingStartLocation(v => !v)}
+                    className="px-2 py-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-[11px] font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                  >
+                    {editingStartLocation ? 'Done' : 'Change'}
+                  </button>
+                </div>
+              </div>
+            )
+          )}
+
+          {editingStartLocation && (
+            <div className="pt-1">
+              <AreaSearchInput
+                inputId="tour-start-location-input"
+                label=""
+                placeholder="Type your home, office, or starting address..."
+                origin={origin}
+                biasLocation={{lat: searchArea.lat, lng: searchArea.lng}}
+                onSelectOrigin={loc => {
+                  onSelectMyLocation(loc);
+                  setEditingStartLocation(false);
+                }}
+                showSelectedLine={false}
+                isOnline={isOnline}
+              />
+            </div>
+          )}
+        </div>
+
         {stops.length === 0 ? (
           <div className="p-6 text-center space-y-2">
             <Navigation className="w-6 h-6 text-slate-400 mx-auto" />
@@ -301,20 +407,6 @@ export const SidebarTour: React.FC<SidebarTourProps> = ({
           </div>
         ) : (
           <div className="divide-y divide-slate-200 dark:divide-slate-800">
-            {/* Origin Row */}
-            {origin && (
-              <div className="px-4 py-2.5 flex items-center gap-3 bg-slate-50/70 dark:bg-slate-900/40">
-                <div className="w-6 h-6 rounded-full bg-slate-900 dark:bg-slate-700 text-white flex items-center justify-center shrink-0">
-                  <MapPin className="w-3.5 h-3.5" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="text-xs font-semibold text-slate-900 dark:text-slate-100 truncate">
-                    Start: {origin.name}
-                  </div>
-                </div>
-              </div>
-            )}
-
             {/* Stops */}
             {displayedStops.map((stop, idx) => {
               const leg = computedRoute?.legs[idx];

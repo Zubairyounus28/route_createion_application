@@ -8,25 +8,40 @@ import type {OriginPoint} from '../types/navigation';
 interface AreaSearchInputProps {
   origin: OriginPoint | null;
   onSelectOrigin: (origin: OriginPoint) => void;
-  onUseCurrentLocation: () => void;
-  isLocating: boolean;
+  onUseCurrentLocation?: () => void;
+  isLocating?: boolean;
   isOnline: boolean;
+  inputId?: string;
+  label?: string;
+  placeholder?: string;
+  showGpsButton?: boolean;
+  showSelectedLine?: boolean;
+  biasLocation?: {lat: number; lng: number} | null;
 }
 
 export const AreaSearchInput: React.FC<AreaSearchInputProps> = ({
   origin,
   onSelectOrigin,
   onUseCurrentLocation,
-  isLocating,
+  isLocating = false,
   isOnline,
+  inputId = 'area-search-input',
+  label = 'Target Area (Find Schools & Places)',
+  placeholder = 'Search any city, area, or neighborhood...',
+  showGpsButton = false,
+  showSelectedLine = true,
+  biasLocation,
 }) => {
   const placesLib = useMapsLibrary('places');
   const [query, setQuery] = useState('');
   const [isOpen, setIsOpen] = useState(false);
 
+  const effectiveBias =
+    biasLocation ?? (origin ? {lat: origin.lat, lng: origin.lng} : null);
+
   const {suggestions, isLoading, resetSession} = useAutocompleteSuggestions(
     query,
-    origin ? {lat: origin.lat, lng: origin.lng} : null
+    effectiveBias
   );
 
   const handleSelectSuggestion = useCallback(
@@ -46,12 +61,12 @@ export const AreaSearchInput: React.FC<AreaSearchInputProps> = ({
             typeof place.location.lng === 'function'
               ? place.location.lng()
               : Number(place.location.lng);
-          const label =
+          const placeLabel =
             place.displayName ||
             place.formattedAddress ||
             suggestion.placePrediction.text.text;
           onSelectOrigin({
-            name: label,
+            name: placeLabel,
             lat,
             lng,
             isCurrentLocation: false,
@@ -68,33 +83,39 @@ export const AreaSearchInput: React.FC<AreaSearchInputProps> = ({
   );
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between gap-2">
-        <label
-          htmlFor="area-search-input"
-          className="text-xs font-semibold text-slate-700 dark:text-slate-300"
-        >
-          Target Area or Starting Location
-        </label>
-        <button
-          type="button"
-          onClick={onUseCurrentLocation}
-          disabled={isLocating}
-          className="inline-flex items-center gap-1.5 min-h-[40px] md:min-h-0 px-2 -mr-2 text-xs font-medium text-teal-600 dark:text-teal-400 hover:text-teal-700 dark:hover:text-teal-300 disabled:opacity-50 transition-colors whitespace-nowrap shrink-0"
-        >
-          {isLocating ? (
-            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-          ) : (
-            <Crosshair className="w-3.5 h-3.5" />
+    <div className="space-y-1.5">
+      {(label || (showGpsButton && onUseCurrentLocation)) && (
+        <div className="flex items-center justify-between gap-2">
+          {label && (
+            <label
+              htmlFor={inputId}
+              className="text-xs font-semibold text-slate-700 dark:text-slate-300"
+            >
+              {label}
+            </label>
           )}
-          Use My GPS
-        </button>
-      </div>
+          {showGpsButton && onUseCurrentLocation && (
+            <button
+              type="button"
+              onClick={onUseCurrentLocation}
+              disabled={isLocating}
+              className="inline-flex items-center gap-1.5 min-h-[36px] md:min-h-0 px-2 -mr-2 text-xs font-medium text-teal-600 dark:text-teal-400 hover:text-teal-700 dark:hover:text-teal-300 disabled:opacity-50 transition-colors whitespace-nowrap shrink-0"
+            >
+              {isLocating ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Crosshair className="w-3.5 h-3.5" />
+              )}
+              Use My GPS
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="relative">
         <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
         <input
-          id="area-search-input"
+          id={inputId}
           type="text"
           value={query}
           disabled={!isOnline}
@@ -103,29 +124,25 @@ export const AreaSearchInput: React.FC<AreaSearchInputProps> = ({
             setQuery(e.target.value);
             setIsOpen(true);
           }}
-          placeholder={
-            isOnline
-              ? 'Search neighborhood, city, or address...'
-              : 'Search unavailable offline'
-          }
-          className="w-full pl-9 pr-10 py-2.5 md:py-2 text-base md:text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-500 disabled:opacity-60"
+          placeholder={isOnline ? placeholder : 'Search unavailable offline'}
+          className="w-full pl-9 pr-10 py-2 text-base md:text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-500 disabled:opacity-60"
         />
         {query && (
           <button
             type="button"
-            aria-label="Clear area search"
+            aria-label="Clear location search"
             onClick={() => {
               setQuery('');
               resetSession();
             }}
-            className="absolute right-1 top-1/2 -translate-y-1/2 min-w-[38px] min-h-[38px] flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+            className="absolute right-1 top-1/2 -translate-y-1/2 min-w-[36px] min-h-[36px] flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
           >
             <X className="w-4 h-4" />
           </button>
         )}
 
         {isOpen && (suggestions.length > 0 || isLoading) && (
-          <div className="absolute z-30 mt-1.5 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-lg overflow-hidden">
+          <div className="absolute z-40 mt-1.5 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-lg overflow-hidden">
             {isLoading && suggestions.length === 0 && (
               <div className="px-3 py-2.5 text-xs text-slate-500 flex items-center gap-2">
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -152,7 +169,7 @@ export const AreaSearchInput: React.FC<AreaSearchInputProps> = ({
         )}
       </div>
 
-      {origin && (
+      {showSelectedLine && origin && (
         <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400 truncate">
           <MapPin className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400 shrink-0" />
           <span className="truncate font-medium text-slate-800 dark:text-slate-200">
