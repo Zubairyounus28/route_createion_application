@@ -742,6 +742,8 @@ function CampusRouteWorkspace({
     setIsNavigating(false);
     setIsRerouting(false);
     pendingLiveStartRef.current = false;
+    setActiveTab('tour');
+    setSheetSnap('half');
     voice.stop();
   }, [voice]);
 
@@ -978,6 +980,10 @@ function CampusRouteWorkspace({
             setActiveTab('tour');
             setSheetSnap('half');
           }}
+          onOpenAddStops={() => {
+            setActiveTab('stops');
+            setSheetSnap('half');
+          }}
           isOnline={isOnline}
         />
       )}
@@ -1071,6 +1077,10 @@ function CampusRouteWorkspace({
           saveFeedback={saveFeedback}
           isSignedIn={Boolean(user)}
           isOnline={isOnline}
+          onOpenAddStops={() => {
+            setActiveTab('stops');
+            setSheetSnap('half');
+          }}
         />
       )}
 
@@ -1122,7 +1132,8 @@ function CampusRouteWorkspace({
     </>
   );
 
-  const showMobileSheet = !(isNavigating && sheetSnap === 'peek');
+  const showMobileSheet = !isNavigating;
+  const nextStep = allSteps[activeStepIndex + 1] || null;
 
   return (
     <div className="flex flex-col h-[100dvh] w-full overflow-hidden bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100">
@@ -1144,8 +1155,9 @@ function CampusRouteWorkspace({
         </div>
       )}
 
-      {/* Three-Zone Top Bar Contract */}
-      <header className="h-11 md:h-14 shrink-0 px-3 sm:px-4 md:px-6 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 flex items-center justify-between gap-3 md:gap-8">
+      {/* Three-Zone Top Bar Contract (hidden during Full-Screen Live Navigation) */}
+      {!isNavigating && (
+        <header className="h-11 md:h-14 shrink-0 px-3 sm:px-4 md:px-6 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 flex items-center justify-between gap-3 md:gap-8">
         <a
           href="/"
           className="font-display text-base md:text-lg font-bold tracking-tight text-slate-900 dark:text-white whitespace-nowrap shrink-0"
@@ -1212,13 +1224,16 @@ function CampusRouteWorkspace({
           )}
         </div>
       </header>
+      )}
 
       {/* Main Split Workspace: Always-Visible Map + Desktop Sidebar + Mobile Interactive Bottom Sheet */}
       <main className="flex-1 relative flex flex-col md:flex-row min-h-0 overflow-hidden">
-        {/* Desktop / Tablet Sidebar */}
-        <aside className="hidden md:flex md:w-[360px] lg:w-[410px] xl:w-[430px] h-full shrink-0 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 flex-col min-h-0">
-          {activeTabContent}
-        </aside>
+        {/* Desktop / Tablet Sidebar (hidden during Full-Screen Live Navigation) */}
+        {!isNavigating && (
+          <aside className="hidden md:flex md:w-[360px] lg:w-[410px] xl:w-[430px] h-full shrink-0 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 flex-col min-h-0">
+            {activeTabContent}
+          </aside>
+        )}
 
         {/* Persistent Full-Height Interactive Map Viewport */}
         <section className="flex-1 h-full relative min-h-0">
@@ -1244,6 +1259,7 @@ function CampusRouteWorkspace({
             onStartLiveGpsNavigation={handleStartLiveGpsNavigation}
             onStopNavigation={handleStopNavigation}
             activeStep={activeStep}
+            nextStep={nextStep}
             activeStepIndex={activeStepIndex}
             totalSteps={allSteps.length}
             onPrevStep={() => {
@@ -1281,7 +1297,9 @@ function CampusRouteWorkspace({
             onDisableGpsFollow={() => setGpsFollowEnabled(false)}
             isRerouting={isRerouting}
             isComputing={isComputing}
-            isVisibleOnMobile={sheetSnap === 'peek' || sheetSnap === 'half'}
+            isVisibleOnMobile={
+              isNavigating || sheetSnap === 'peek' || sheetSnap === 'half'
+            }
             showMobileQuickLaunch={false}
           />
         </section>
@@ -1384,7 +1402,8 @@ function CampusRouteWorkspace({
         )}
       </main>
 
-      {/* Mobile Bottom Thumb-Zone Navigation Bar */}
+      {/* Mobile Bottom Thumb-Zone Navigation Bar (hidden during Full-Screen Live Navigation) */}
+      {!isNavigating && (
       <nav
         aria-label="Mobile navigation"
         className="md:hidden shrink-0 border-t border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-950/95 backdrop-blur pb-safe z-30"
@@ -1456,8 +1475,9 @@ function CampusRouteWorkspace({
           })}
         </div>
       </nav>
+      )}
 
-      <AppFooter variant="bar" />
+      {!isNavigating && <AppFooter variant="bar" />}
 
       <OfflineIndicator />
     </div>

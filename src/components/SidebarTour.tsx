@@ -65,6 +65,7 @@ interface SidebarTourProps {
   saveFeedback: string | null;
   isSignedIn: boolean;
   isOnline: boolean;
+  onOpenAddStops?: () => void;
 }
 
 export const SidebarTour: React.FC<SidebarTourProps> = ({
@@ -101,6 +102,7 @@ export const SidebarTour: React.FC<SidebarTourProps> = ({
   saveFeedback,
   isSignedIn,
   isOnline,
+  onOpenAddStops,
 }) => {
   const [confirmClear, setConfirmClear] = useState(false);
   const [showRouteOptions, setShowRouteOptions] = useState(false);
@@ -396,14 +398,23 @@ export const SidebarTour: React.FC<SidebarTourProps> = ({
         </div>
 
         {stops.length === 0 ? (
-          <div className="p-6 text-center space-y-2">
+          <div className="p-6 text-center space-y-3">
             <Navigation className="w-6 h-6 text-slate-400 mx-auto" />
             <p className="text-sm font-medium text-slate-800 dark:text-slate-200">
               Your route has no stops yet
             </p>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Add schools, bookstores, libraries, or other places from Discover to build a multi-stop route.
+              Add schools, bookstores, libraries, or other places to build your multi-stop route.
             </p>
+            {onOpenAddStops && (
+              <button
+                type="button"
+                onClick={onOpenAddStops}
+                className="inline-flex items-center justify-center gap-1.5 min-h-[40px] px-4 py-2 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold transition-colors"
+              >
+                + Add Stops
+              </button>
+            )}
           </div>
         ) : (
           <div className="divide-y divide-slate-200 dark:divide-slate-800">

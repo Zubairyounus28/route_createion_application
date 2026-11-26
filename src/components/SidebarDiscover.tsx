@@ -55,6 +55,7 @@ interface SidebarDiscoverProps {
   focusedSchoolId: string | null;
   onFocusSchool: (placeId: string) => void;
   onOpenTour: () => void;
+  onOpenAddStops?: () => void;
   isOnline: boolean;
 }
 
@@ -95,6 +96,7 @@ export const SidebarDiscover: React.FC<SidebarDiscoverProps> = ({
   focusedSchoolId,
   onFocusSchool,
   onOpenTour,
+  onOpenAddStops,
   isOnline,
 }) => {
   const [minRating, setMinRating] = useState<number>(0);
@@ -341,9 +343,16 @@ export const SidebarDiscover: React.FC<SidebarDiscoverProps> = ({
           </button>
 
           <div className="flex items-center gap-2">
-            <span className="text-[11px] font-mono tabular-nums text-slate-500 dark:text-slate-400">
-              {filteredSchools.length} found
-            </span>
+            {onOpenAddStops && (
+              <button
+                type="button"
+                onClick={onOpenAddStops}
+                className="inline-flex items-center gap-1 min-h-[34px] md:min-h-0 px-2.5 py-1 rounded-md bg-teal-50 dark:bg-teal-950/40 border border-teal-200 dark:border-teal-800 text-[11px] font-semibold text-teal-700 dark:text-teal-300 hover:bg-teal-100 dark:hover:bg-teal-900/50 transition-colors whitespace-nowrap"
+              >
+                Add Stops ({filteredSchools.length})
+                <ArrowRight className="w-3 h-3" />
+              </button>
+            )}
             <button
               type="button"
               onClick={onRefreshSearch}

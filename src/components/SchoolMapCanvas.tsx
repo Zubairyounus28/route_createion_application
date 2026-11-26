@@ -69,6 +69,7 @@ interface SchoolMapCanvasProps {
   onStartLiveGpsNavigation: () => void;
   onStopNavigation: () => void;
   activeStep: ComputedRouteStep | null;
+  nextStep?: ComputedRouteStep | null;
   activeStepIndex: number;
   totalSteps: number;
   onPrevStep: () => void;
@@ -137,6 +138,7 @@ export const SchoolMapCanvas: React.FC<SchoolMapCanvasProps> = ({
   onStartLiveGpsNavigation,
   onStopNavigation,
   activeStep,
+  nextStep = null,
   activeStepIndex,
   totalSteps,
   onPrevStep,
@@ -201,19 +203,23 @@ export const SchoolMapCanvas: React.FC<SchoolMapCanvasProps> = ({
     map.panTo({lat: focusedSchool.lat, lng: focusedSchool.lng});
   }, [map, focusedSchool?.placeId, isNavigating]);
 
-  // Trigger resize/re-fit when mobile map visibility changes
+  // Trigger resize/re-fit when mobile visibility or full-screen navigation mode changes
   useEffect(() => {
     if (!map || !isVisibleOnMobile) return;
     const timer = window.setTimeout(() => {
       google.maps.event.trigger(map, 'resize');
-      if (isNavigating && gpsFollowEnabled && userLiveLocation) {
-        map.panTo(userLiveLocation);
+      if (isNavigating && gpsFollowEnabled) {
+        const target = userLiveLocation || activeStep?.startLocation;
+        if (target) {
+          map.panTo(target);
+          map.setZoom(travelMode === 'BICYCLING' ? 17 : 16);
+        }
       } else if (sdkRoute?.viewport && !isNavigating) {
         map.fitBounds(sdkRoute.viewport, 48);
       }
     }, 60);
     return () => window.clearTimeout(timer);
-  }, [map, isVisibleOnMobile]);
+  }, [map, isVisibleOnMobile, isNavigating]);
 
   // Pause GPS auto-follow if the driver/rider manually drags the map
   useEffect(() => {
@@ -244,7 +250,7 @@ export const SchoolMapCanvas: React.FC<SchoolMapCanvasProps> = ({
     const target = userLiveLocation || activeStep?.startLocation;
     if (!target) return;
     map.panTo(target);
-    const targetZoom = travelMode === 'BICYCLING' ? 16 : 15;
+    const targetZoom = travelMode === 'BICYCLING' ? 17 : 16;
     if ((map.getZoom() ?? 12) < targetZoom) {
       map.setZoom(targetZoom);
     }
@@ -409,6 +415,37 @@ export const SchoolMapCanvas: React.FC<SchoolMapCanvasProps> = ({
       ? metersToTurnCue(liveTelemetry.distanceToNextTurnMeters)
       : activeStep?.distanceText || '';
 
+  const activeLeg =
+    activeStep && computedRoute?.legs[activeStep.legIndex]
+      ? computedRoute.legs[activeStep.legIndex]
+      : null;
+
+  const {remainingDistanceMeters, remainingDurationMillis} = (() => {
+    if (!computedRoute) {
+      return {remainingDistanceMeters: 0, remainingDurationMillis: 0};
+    }
+    const flatSteps = computedRoute.legs.flatMap(l => l.steps);
+    if (flatSteps.length === 0 || activeStepIndex >= flatSteps.length) {
+      return {
+        remainingDistanceMeters: computedRoute.totalDistanceMeters,
+        remainingDurationMillis: computedRoute.totalDurationMillis,
+      };
+    }
+    const remDist = flatSteps
+      .slice(activeStepIndex)
+      .reduce((acc, s) => acc + (s.distanceMeters || 0), 0);
+    const ratio =
+      computedRoute.totalDistanceMeters > 0
+        ? Math.min(1, Math.max(0, remDist / computedRoute.totalDistanceMeters))
+        : 0;
+    return {
+      remainingDistanceMeters: remDist,
+      remainingDurationMillis: Math.round(
+        computedRoute.totalDurationMillis * ratio
+      ),
+    };
+  })();
+
   return (
     <div className="relative w-full h-full min-h-[260px] bg-slate-200 dark:bg-slate-900">
       <GoogleMap
@@ -545,8 +582,8 @@ export const SchoolMapCanvas: React.FC<SchoolMapCanvasProps> = ({
           </AdvancedMarker>
         ))}
 
-        {/* Place InfoWindow */}
-        {focusedSchool && (() => {
+        {/* Place InfoWindow (hidden during active riding so map stays clear) */}
+        {!isNavigating && focusedSchool && (() => {
           const matchedAnchor =
             selectedMarker?.placeId === focusedSchool.placeId
               ? selectedMarker.el
@@ -633,90 +670,88 @@ export const SchoolMapCanvas: React.FC<SchoolMapCanvasProps> = ({
         })()}
       </GoogleMap>
 
-      {/* Top-Right Responsive Map Style, Traffic & GPS Follow Toolbar */}
-      <div className="absolute top-3 right-3 z-20 flex items-center gap-1.5 sm:gap-2 max-w-[calc(100%-1.5rem)] justify-end">
-        {/* Desktop Map Style Segmented Control */}
-        <div className="hidden sm:flex items-center gap-0.5 p-1 rounded-lg bg-white/95 dark:bg-slate-900/95 border border-slate-200 dark:border-slate-800 shadow-sm backdrop-blur">
-          {MAP_STYLE_OPTIONS.map(item => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => onChangeMapStyle(item.id)}
-              className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
-                mapStyle === item.id
-                  ? 'bg-slate-900 text-white dark:bg-teal-600 dark:text-white'
-                  : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
+      {/* Top-Right Map Controls (hidden in Full-Screen Rider Mode to keep screen clean) */}
+      {!isNavigating && (
+        <div className="absolute top-3 right-3 z-20 flex items-center gap-1.5 sm:gap-2 max-w-[calc(100%-1.5rem)] justify-end">
+          {/* Desktop Map Style Segmented Control */}
+          <div className="hidden sm:flex items-center gap-0.5 p-1 rounded-lg bg-white/95 dark:bg-slate-900/95 border border-slate-200 dark:border-slate-800 shadow-sm backdrop-blur">
+            {MAP_STYLE_OPTIONS.map(item => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => onChangeMapStyle(item.id)}
+                className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
+                  mapStyle === item.id
+                    ? 'bg-slate-900 text-white dark:bg-teal-600 dark:text-white'
+                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
 
-        {/* Mobile Compact Map Style Picker */}
-        <div className="relative sm:hidden">
+          {/* Mobile Compact Map Style Picker */}
+          <div className="relative sm:hidden">
+            <button
+              type="button"
+              onClick={() => setMobileStyleOpen(v => !v)}
+              className="inline-flex items-center justify-center gap-1 min-h-[40px] px-2.5 rounded-lg bg-white/95 dark:bg-slate-900/95 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-800 shadow-sm backdrop-blur text-xs font-medium whitespace-nowrap"
+            >
+              <Palette className="w-3.5 h-3.5 text-teal-600" />
+              <span>{MAP_STYLE_OPTIONS.find(s => s.id === mapStyle)?.label}</span>
+            </button>
+            {mobileStyleOpen && (
+              <div className="absolute right-0 mt-1.5 w-36 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-lg p-1 z-30">
+                {MAP_STYLE_OPTIONS.map(item => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => {
+                      onChangeMapStyle(item.id);
+                      setMobileStyleOpen(false);
+                    }}
+                    className={`w-full text-left px-3 py-2.5 rounded-lg text-xs font-medium min-h-[40px] flex items-center justify-between ${
+                      mapStyle === item.id
+                        ? 'bg-teal-600 text-white'
+                        : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    <span>{item.label}</span>
+                    {mapStyle === item.id && <Check className="w-3.5 h-3.5" />}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
           <button
             type="button"
-            onClick={() => setMobileStyleOpen(v => !v)}
-            className="inline-flex items-center justify-center gap-1 min-h-[40px] px-2.5 rounded-lg bg-white/95 dark:bg-slate-900/95 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-800 shadow-sm backdrop-blur text-xs font-medium whitespace-nowrap"
+            onClick={onToggleTraffic}
+            className={`inline-flex items-center justify-center gap-1 min-h-[40px] sm:min-h-0 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium border shadow-sm transition-colors whitespace-nowrap shrink-0 backdrop-blur ${
+              showTraffic
+                ? 'bg-teal-600 text-white border-teal-600 hover:bg-teal-700'
+                : 'bg-white/95 dark:bg-slate-900/95 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800'
+            }`}
           >
-            <Palette className="w-3.5 h-3.5 text-teal-600" />
-            <span>{MAP_STYLE_OPTIONS.find(s => s.id === mapStyle)?.label}</span>
+            <Layers className="w-3.5 h-3.5" />
+            <span>Traffic</span>
           </button>
-          {mobileStyleOpen && (
-            <div className="absolute right-0 mt-1.5 w-36 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-lg p-1 z-30">
-              {MAP_STYLE_OPTIONS.map(item => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => {
-                    onChangeMapStyle(item.id);
-                    setMobileStyleOpen(false);
-                  }}
-                  className={`w-full text-left px-3 py-2.5 rounded-lg text-xs font-medium min-h-[40px] flex items-center justify-between ${
-                    mapStyle === item.id
-                      ? 'bg-teal-600 text-white'
-                      : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
-                  }`}
-                >
-                  <span>{item.label}</span>
-                  {mapStyle === item.id && <Check className="w-3.5 h-3.5" />}
-                </button>
-              ))}
-            </div>
-          )}
+
+          <button
+            type="button"
+            onClick={handleRecenter}
+            title="Recenter map"
+            aria-label="Recenter map"
+            className="inline-flex items-center justify-center min-w-[40px] min-h-[40px] sm:min-w-0 sm:min-h-0 sm:w-8 sm:h-8 rounded-lg border shadow-sm transition-colors backdrop-blur bg-white/95 dark:bg-slate-900/95 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800"
+          >
+            <Crosshair className="w-4 h-4" />
+          </button>
         </div>
+      )}
 
-        <button
-          type="button"
-          onClick={onToggleTraffic}
-          className={`inline-flex items-center justify-center gap-1 min-h-[40px] sm:min-h-0 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium border shadow-sm transition-colors whitespace-nowrap shrink-0 backdrop-blur ${
-            showTraffic
-              ? 'bg-teal-600 text-white border-teal-600 hover:bg-teal-700'
-              : 'bg-white/95 dark:bg-slate-900/95 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800'
-          }`}
-        >
-          <Layers className="w-3.5 h-3.5" />
-          <span>Traffic</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={handleRecenter}
-          title={isNavigating ? 'Follow live GPS' : 'Recenter map'}
-          aria-label={isNavigating ? 'Follow live GPS' : 'Recenter map'}
-          className={`inline-flex items-center justify-center min-w-[40px] min-h-[40px] sm:min-w-0 sm:min-h-0 sm:w-8 sm:h-8 rounded-lg border shadow-sm transition-colors backdrop-blur ${
-            isNavigating && gpsFollowEnabled
-              ? 'bg-sky-600 text-white border-sky-600'
-              : 'bg-white/95 dark:bg-slate-900/95 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800'
-          }`}
-        >
-          <Crosshair className="w-4 h-4" />
-        </button>
-      </div>
-
-      {/* Top-Left Live Car / Bike Quick Switcher during active preview or navigation */}
-      {tourStops.length > 0 && (
+      {/* Top-Left Live Car / Bike Quick Switcher during preview */}
+      {!isNavigating && tourStops.length > 0 && (
         <div className="absolute top-3 left-3 z-20 flex items-center gap-1 p-1 rounded-lg bg-white/95 dark:bg-slate-900/95 border border-slate-200 dark:border-slate-800 shadow-sm backdrop-blur">
           <button
             type="button"
@@ -789,141 +824,176 @@ export const SchoolMapCanvas: React.FC<SchoolMapCanvasProps> = ({
         </div>
       )}
 
-      {/* Active Live Car/Bike Turn-by-Turn Navigation HUD */}
+      {/* Full-Screen Rider Mode: Top Turn-by-Turn Banner + Floating Side Controls + Bottom Trip Bar */}
       {isNavigating && activeStep && (
-        <div className="absolute bottom-3 left-3 right-3 md:bottom-4 md:left-4 md:right-auto md:w-[400px] z-20 rounded-2xl bg-slate-900/95 text-white border border-slate-700/90 shadow-2xl backdrop-blur p-3.5 md:p-4">
-          <div className="flex items-center justify-between gap-2 pb-2 mb-2 border-b border-slate-800 text-[11px] font-mono tabular-nums text-slate-300">
-            <div className="flex items-center gap-2 min-w-0">
-              <span className="inline-flex items-center gap-1 text-teal-300 font-semibold">
-                {travelMode === 'BICYCLING' ? (
-                  <Bike className="w-3.5 h-3.5" />
-                ) : (
-                  <Car className="w-3.5 h-3.5" />
-                )}
-                {modeLabel} Live
-              </span>
-              <span aria-hidden="true">·</span>
-              <span>{mpsToMphText(liveTelemetry?.speedMps ?? null)}</span>
-              {computedRoute && (
-                <>
-                  <span aria-hidden="true">·</span>
-                  <span>
-                    {millisToDurationText(computedRoute.totalDurationMillis)} left
-                  </span>
-                </>
-              )}
-            </div>
-
-            {isRerouting && (
-              <span className="inline-flex items-center gap-1 text-amber-300 shrink-0">
-                <Loader2 className="w-3 h-3 animate-spin" />
-                Rerouting
-              </span>
-            )}
-          </div>
-
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex items-start gap-3 min-w-0">
+        <>
+          {/* Top Turn Instruction Card (Rider glances ahead) */}
+          <div className="absolute top-3 left-3 right-3 md:left-1/2 md:-translate-x-1/2 md:w-full md:max-w-[560px] z-30 rounded-2xl bg-slate-900/95 text-white border border-slate-700/90 shadow-2xl backdrop-blur p-3 sm:p-3.5">
+            <div className="flex items-start gap-3">
               <div
-                className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${
+                className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 shadow-inner ${
                   travelMode === 'BICYCLING' ? 'bg-sky-600' : 'bg-teal-600'
                 }`}
               >
                 <ManeuverIcon
                   maneuver={activeStep.maneuver}
-                  className="w-6 h-6 text-white"
+                  className="w-7 h-7 text-white"
                 />
               </div>
+
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    {liveDistanceLabel && (
+                      <span className="text-base sm:text-lg font-bold font-mono tabular-nums text-teal-300">
+                        {liveDistanceLabel}
+                      </span>
+                    )}
+                    {isRerouting && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[11px] font-medium">
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        Rerouting
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={onRepeatStep}
+                      title="Repeat voice instruction"
+                      aria-label="Repeat voice instruction"
+                      className="min-h-[34px] px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] font-medium text-slate-200 transition-colors"
+                    >
+                      Repeat
+                    </button>
+                    <button
+                      type="button"
+                      onClick={onToggleVoice}
+                      aria-label={voiceEnabled ? 'Mute voice' : 'Unmute voice'}
+                      className="min-w-[34px] min-h-[34px] flex items-center justify-center rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors"
+                    >
+                      {voiceEnabled ? (
+                        <Volume2 className="w-4 h-4 text-teal-400" />
+                      ) : (
+                        <VolumeX className="w-4 h-4 text-slate-400" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                <p className="mt-0.5 text-sm sm:text-base font-bold leading-snug text-white">
+                  {activeStep.instruction}
+                </p>
+
+                <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] text-slate-300">
+                  {activeLeg && (
+                    <span className="font-medium text-teal-200 truncate max-w-full">
+                      Stop {activeLeg.legIndex + 1}/{computedRoute?.legs.length ?? 1}:{' '}
+                      {activeLeg.toLabel}
+                    </span>
+                  )}
+                  {nextStep && (
+                    <span className="text-slate-400 truncate max-w-full">
+                      Then: {nextStep.instruction}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Right-Side Quick Map Controls while Riding */}
+          <div className="absolute right-3 bottom-24 z-30 flex flex-col gap-2">
+            <button
+              type="button"
+              onClick={handleRecenter}
+              title={gpsFollowEnabled ? 'GPS Centered' : 'Re-center on live GPS'}
+              aria-label={gpsFollowEnabled ? 'GPS Centered' : 'Re-center on live GPS'}
+              className={`inline-flex items-center justify-center w-11 h-11 rounded-full border shadow-lg transition-colors backdrop-blur ${
+                gpsFollowEnabled
+                  ? 'bg-sky-600 text-white border-sky-500'
+                  : 'bg-white/95 dark:bg-slate-900/95 text-sky-600 dark:text-sky-400 border-slate-200 dark:border-slate-700 ring-2 ring-sky-500/40'
+              }`}
+            >
+              <Crosshair className="w-5 h-5" />
+            </button>
+
+            <button
+              type="button"
+              onClick={onToggleTraffic}
+              title="Toggle live traffic"
+              aria-label="Toggle live traffic"
+              className={`inline-flex items-center justify-center w-11 h-11 rounded-full border shadow-lg transition-colors backdrop-blur ${
+                showTraffic
+                  ? 'bg-teal-600 text-white border-teal-500'
+                  : 'bg-white/95 dark:bg-slate-900/95 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700'
+              }`}
+            >
+              <Layers className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Bottom Compact Rider Trip & Control Bar */}
+          <div className="absolute bottom-3 left-3 right-3 md:left-1/2 md:-translate-x-1/2 md:w-full md:max-w-[560px] z-30 rounded-2xl bg-slate-900/95 text-white border border-slate-700/90 shadow-2xl backdrop-blur px-3.5 py-2.5 pb-safe">
+            <div className="flex items-center justify-between gap-2">
               <div className="min-w-0">
-                <div className="flex items-center gap-2 text-xs text-teal-300 font-mono tabular-nums">
+                <div className="flex items-center gap-2 text-sm font-bold font-mono tabular-nums text-white">
+                  <span className="text-teal-300">
+                    {millisToDurationText(remainingDurationMillis)}
+                  </span>
+                  <span aria-hidden="true" className="text-slate-500">
+                    ·
+                  </span>
+                  <span>{metersToMilesText(remainingDistanceMeters)}</span>
+                </div>
+                <div className="mt-0.5 flex items-center gap-1.5 text-[11px] font-mono tabular-nums text-slate-300">
+                  <span className="inline-flex items-center gap-1 text-slate-200">
+                    {travelMode === 'BICYCLING' ? (
+                      <Bike className="w-3 h-3 text-sky-400" />
+                    ) : (
+                      <Car className="w-3 h-3 text-teal-400" />
+                    )}
+                    {mpsToMphText(liveTelemetry?.speedMps ?? null)}
+                  </span>
+                  <span aria-hidden="true">·</span>
                   <span>
                     Step {activeStepIndex + 1}/{totalSteps}
                   </span>
-                  {liveDistanceLabel && (
-                    <>
-                      <span aria-hidden="true">·</span>
-                      <span className="font-semibold text-white">
-                        {liveDistanceLabel}
-                      </span>
-                    </>
-                  )}
                 </div>
-                <p className="mt-1 text-sm md:text-base font-semibold leading-snug text-white">
-                  {activeStep.instruction}
-                </p>
+              </div>
+
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={onPrevStep}
+                  disabled={activeStepIndex <= 0}
+                  aria-label="Previous step"
+                  className="inline-flex items-center justify-center min-w-[40px] min-h-[42px] px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-xs font-medium text-white transition-colors"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={onNextStep}
+                  disabled={activeStepIndex >= totalSteps - 1}
+                  aria-label="Next step"
+                  className="inline-flex items-center justify-center min-w-[40px] min-h-[42px] px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-xs font-medium text-white transition-colors"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={onStopNavigation}
+                  className="inline-flex items-center justify-center gap-1 min-h-[42px] px-3.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-semibold transition-colors whitespace-nowrap"
+                >
+                  <X className="w-4 h-4" />
+                  End
+                </button>
               </div>
             </div>
-            <button
-              type="button"
-              onClick={onStopNavigation}
-              aria-label="Exit navigation"
-              className="text-slate-400 hover:text-white min-w-[44px] min-h-[44px] -mt-1 -mr-1 flex items-center justify-center rounded-lg shrink-0"
-            >
-              <X className="w-5 h-5" />
-            </button>
           </div>
-
-          {!gpsFollowEnabled && (
-            <button
-              type="button"
-              onClick={onToggleGpsFollow}
-              className="mt-2.5 w-full min-h-[40px] rounded-lg bg-sky-600/20 border border-sky-500/40 text-sky-200 text-xs font-medium flex items-center justify-center gap-1.5 hover:bg-sky-600/30"
-            >
-              <Crosshair className="w-3.5 h-3.5" />
-              Re-center on live GPS
-            </button>
-          )}
-
-          <div className="mt-3 pt-3 border-t border-slate-800 flex items-center justify-between gap-2">
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                onClick={onToggleVoice}
-                className="inline-flex items-center justify-center gap-1.5 min-h-[44px] sm:min-h-0 px-3 py-2 sm:py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 transition-colors"
-              >
-                {voiceEnabled ? (
-                  <>
-                    <Volume2 className="w-4 h-4 text-teal-400" />
-                    <span>Voice</span>
-                  </>
-                ) : (
-                  <>
-                    <VolumeX className="w-4 h-4 text-slate-400" />
-                    <span>Muted</span>
-                  </>
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={onRepeatStep}
-                className="min-h-[44px] sm:min-h-0 px-3 py-2 sm:py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 transition-colors"
-              >
-                Repeat
-              </button>
-            </div>
-
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                onClick={onPrevStep}
-                disabled={activeStepIndex <= 0}
-                className="inline-flex items-center justify-center gap-1 min-h-[44px] sm:min-h-0 px-3 py-2 sm:py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-xs font-medium text-white transition-colors"
-              >
-                <ChevronLeft className="w-4 h-4" />
-                Prev
-              </button>
-              <button
-                type="button"
-                onClick={onNextStep}
-                disabled={activeStepIndex >= totalSteps - 1}
-                className="inline-flex items-center justify-center gap-1 min-h-[44px] sm:min-h-0 px-3.5 py-2 sm:py-1.5 rounded-lg bg-teal-600 hover:bg-teal-500 disabled:opacity-40 text-xs font-medium text-white transition-colors"
-              >
-                Next
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        </div>
+        </>
       )}
     </div>
   );
