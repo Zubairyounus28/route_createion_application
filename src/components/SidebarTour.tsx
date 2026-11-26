@@ -43,6 +43,7 @@ interface SidebarTourProps {
   onClearStops: () => void;
   onRefreshTraffic: () => void;
   onStartNavigation: () => void;
+  onStartLiveGpsNavigation: () => void;
   tourTitle: string;
   onChangeTourTitle: (title: string) => void;
   onSaveTour: () => Promise<void>;
@@ -71,6 +72,7 @@ export const SidebarTour: React.FC<SidebarTourProps> = ({
   onClearStops,
   onRefreshTraffic,
   onStartNavigation,
+  onStartLiveGpsNavigation,
   tourTitle,
   onChangeTourTitle,
   onSaveTour,
@@ -95,9 +97,9 @@ export const SidebarTour: React.FC<SidebarTourProps> = ({
           <div className="grid grid-cols-4 gap-1 p-1 rounded-lg bg-slate-100 dark:bg-slate-800/80">
             {(
               [
-                {id: 'DRIVING', label: 'Drive', icon: Car},
-                {id: 'WALKING', label: 'Walk', icon: Footprints},
+                {id: 'DRIVING', label: 'Car', icon: Car},
                 {id: 'BICYCLING', label: 'Bike', icon: Bike},
+                {id: 'WALKING', label: 'Walk', icon: Footprints},
                 {id: 'TRANSIT', label: 'Transit', icon: Bus},
               ] as {
                 id: TravelModeOption;
@@ -111,7 +113,7 @@ export const SidebarTour: React.FC<SidebarTourProps> = ({
                   key={item.id}
                   type="button"
                   onClick={() => onChangeTravelMode(item.id)}
-                  className={`inline-flex items-center justify-center gap-1 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
+                  className={`inline-flex items-center justify-center gap-1 min-h-[42px] md:min-h-0 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
                     travelMode === item.id
                       ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
                       : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
@@ -134,7 +136,7 @@ export const SidebarTour: React.FC<SidebarTourProps> = ({
             <button
               type="button"
               onClick={() => onChangeRouteObjective('FASTEST_TRAFFIC')}
-              className={`py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
+              className={`min-h-[42px] md:min-h-0 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
                 routeObjective === 'FASTEST_TRAFFIC'
                   ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
@@ -145,7 +147,7 @@ export const SidebarTour: React.FC<SidebarTourProps> = ({
             <button
               type="button"
               onClick={() => onChangeRouteObjective('SHORTEST_DISTANCE')}
-              className={`py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
+              className={`min-h-[42px] md:min-h-0 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
                 routeObjective === 'SHORTEST_DISTANCE'
                   ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
@@ -226,6 +228,11 @@ export const SidebarTour: React.FC<SidebarTourProps> = ({
                 </>
               )}
             </div>
+            {computedRoute.routeFallbackNote && (
+              <p className="mt-1.5 text-[11px] text-amber-700 dark:text-amber-400">
+                {computedRoute.routeFallbackNote}
+              </p>
+            )}
           </div>
         )}
 
@@ -297,7 +304,7 @@ export const SidebarTour: React.FC<SidebarTourProps> = ({
                     )}
                   </div>
 
-                  <div className="flex items-center gap-1 shrink-0">
+                  <div className="flex items-center gap-0.5 shrink-0">
                     {!optimizeOrder && (
                       <>
                         <button
@@ -305,7 +312,7 @@ export const SidebarTour: React.FC<SidebarTourProps> = ({
                           onClick={() => onMoveStop(idx, -1)}
                           disabled={idx === 0}
                           aria-label="Move stop up"
-                          className="p-1 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 disabled:opacity-30"
+                          className="min-w-[36px] min-h-[36px] md:min-w-0 md:min-h-0 p-1.5 md:p-1 flex items-center justify-center rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 disabled:opacity-30"
                         >
                           <ArrowUp className="w-3.5 h-3.5" />
                         </button>
@@ -314,7 +321,7 @@ export const SidebarTour: React.FC<SidebarTourProps> = ({
                           onClick={() => onMoveStop(idx, 1)}
                           disabled={idx === displayedStops.length - 1}
                           aria-label="Move stop down"
-                          className="p-1 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 disabled:opacity-30"
+                          className="min-w-[36px] min-h-[36px] md:min-w-0 md:min-h-0 p-1.5 md:p-1 flex items-center justify-center rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 disabled:opacity-30"
                         >
                           <ArrowDown className="w-3.5 h-3.5" />
                         </button>
@@ -324,7 +331,7 @@ export const SidebarTour: React.FC<SidebarTourProps> = ({
                       type="button"
                       onClick={() => onRemoveStop(stop.placeId)}
                       aria-label={`Remove ${stop.name}`}
-                      className="p-1 rounded text-slate-400 hover:text-red-600 dark:hover:text-red-400"
+                      className="min-w-[36px] min-h-[36px] md:min-w-0 md:min-h-0 p-1.5 md:p-1 flex items-center justify-center rounded text-slate-400 hover:text-red-600 dark:hover:text-red-400"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
@@ -360,13 +367,13 @@ export const SidebarTour: React.FC<SidebarTourProps> = ({
               onChange={e => onChangeTourTitle(e.target.value)}
               maxLength={120}
               placeholder="Name this school tour..."
-              className="flex-1 px-3 py-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-teal-500"
+              className="flex-1 min-h-[42px] md:min-h-0 px-3 py-2 text-base md:text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-teal-500"
             />
             <button
               type="button"
               onClick={() => void onSaveTour()}
               disabled={isSavingTour}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 transition-colors whitespace-nowrap shrink-0"
+              className="inline-flex items-center justify-center gap-1.5 min-h-[42px] md:min-h-0 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 transition-colors whitespace-nowrap shrink-0"
             >
               {isSavingTour ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -388,12 +395,16 @@ export const SidebarTour: React.FC<SidebarTourProps> = ({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={onStartNavigation}
+              onClick={
+                origin?.isCurrentLocation
+                  ? onStartNavigation
+                  : onStartLiveGpsNavigation
+              }
               disabled={!computedRoute || computedRoute.legs.length === 0}
-              className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white text-sm font-semibold transition-colors whitespace-nowrap shrink-0"
+              className="flex-1 inline-flex items-center justify-center gap-2 min-h-[44px] px-4 py-2.5 rounded-lg bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white text-sm font-semibold transition-colors whitespace-nowrap shrink-0"
             >
               <Navigation className="w-4 h-4" />
-              Start Turn-by-Turn
+              Start Live {travelMode === 'BICYCLING' ? 'Bike' : travelMode === 'DRIVING' ? 'Car' : 'Route'}
             </button>
 
             {confirmClear ? (
@@ -404,7 +415,7 @@ export const SidebarTour: React.FC<SidebarTourProps> = ({
                   setConfirmClear(false);
                 }}
                 onMouseLeave={() => setConfirmClear(false)}
-                className="px-3 py-2.5 rounded-lg bg-red-600 text-white text-xs font-medium hover:bg-red-700 transition-colors whitespace-nowrap shrink-0"
+                className="min-h-[44px] px-3 py-2.5 rounded-lg bg-red-600 text-white text-xs font-medium hover:bg-red-700 transition-colors whitespace-nowrap shrink-0"
               >
                 Confirm Clear
               </button>
@@ -412,7 +423,7 @@ export const SidebarTour: React.FC<SidebarTourProps> = ({
               <button
                 type="button"
                 onClick={() => setConfirmClear(true)}
-                className="px-3 py-2.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-600 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 transition-colors whitespace-nowrap shrink-0"
+                className="min-h-[44px] px-3 py-2.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-600 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 transition-colors whitespace-nowrap shrink-0"
               >
                 Clear
               </button>

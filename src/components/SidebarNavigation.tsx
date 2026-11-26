@@ -1,5 +1,7 @@
 import React from 'react';
 import {
+  Bike,
+  Car,
   Crosshair,
   Navigation,
   Play,
@@ -8,11 +10,17 @@ import {
   VolumeX,
 } from 'lucide-react';
 import {metersToMilesText, millisToDurationText} from '../lib/formatters';
-import type {ComputedRouteStep, ComputedTourRoute} from '../types/navigation';
+import type {
+  ComputedRouteStep,
+  ComputedTourRoute,
+  TravelModeOption,
+} from '../types/navigation';
 import {ManeuverIcon} from './ManeuverIcon';
 
 interface SidebarNavigationProps {
   computedRoute: ComputedTourRoute | null;
+  travelMode: TravelModeOption;
+  onChangeTravelMode: (mode: TravelModeOption) => void;
   isNavigating: boolean;
   onStartNavigation: () => void;
   onStopNavigation: () => void;
@@ -30,6 +38,8 @@ interface SidebarNavigationProps {
 
 export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
   computedRoute,
+  travelMode,
+  onChangeTravelMode,
   isNavigating,
   onStartNavigation,
   onStopNavigation,
@@ -52,7 +62,7 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
           No active turn-by-turn directions
         </p>
         <p className="text-xs text-slate-500 dark:text-slate-400">
-          Select at least one school stop to view leg-by-leg maneuvers and launch voice-guided navigation.
+          Select at least one school stop to view leg-by-leg maneuvers and launch live Car or Bike navigation.
         </p>
       </div>
     );
@@ -62,14 +72,42 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
 
   return (
     <div className="flex flex-col h-full">
-      {/* Voice & Live GPS Controls */}
+      {/* Voice, Car/Bike Switch & Live GPS Controls */}
       <div className="p-4 border-b border-slate-200 dark:border-slate-800 space-y-3">
+        {/* Quick Car vs Bike Switcher */}
+        <div className="grid grid-cols-2 gap-1 p-1 rounded-lg bg-slate-100 dark:bg-slate-800/80">
+          <button
+            type="button"
+            onClick={() => onChangeTravelMode('DRIVING')}
+            className={`inline-flex items-center justify-center gap-1.5 min-h-[40px] md:min-h-0 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap ${
+              travelMode === 'DRIVING'
+                ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            <Car className="w-3.5 h-3.5" />
+            Car Directions
+          </button>
+          <button
+            type="button"
+            onClick={() => onChangeTravelMode('BICYCLING')}
+            className={`inline-flex items-center justify-center gap-1.5 min-h-[40px] md:min-h-0 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap ${
+              travelMode === 'BICYCLING'
+                ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            <Bike className="w-3.5 h-3.5" />
+            Bike Directions
+          </button>
+        </div>
+
         <div className="flex items-center justify-between gap-2">
           {isNavigating ? (
             <button
               type="button"
               onClick={onStopNavigation}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-semibold transition-colors whitespace-nowrap shrink-0"
+              className="inline-flex items-center justify-center gap-1.5 min-h-[44px] md:min-h-0 px-3.5 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-semibold transition-colors whitespace-nowrap shrink-0"
             >
               <Square className="w-3.5 h-3.5" />
               End Navigation
@@ -78,7 +116,7 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
             <button
               type="button"
               onClick={onStartNavigation}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold transition-colors whitespace-nowrap shrink-0"
+              className="inline-flex items-center justify-center gap-1.5 min-h-[44px] md:min-h-0 px-3.5 py-2 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold transition-colors whitespace-nowrap shrink-0"
             >
               <Play className="w-3.5 h-3.5" />
               Start Voice Guidance
@@ -89,7 +127,7 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
             type="button"
             onClick={onToggleVoice}
             disabled={!voiceSupported}
-            className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
+            className={`inline-flex items-center justify-center gap-1.5 min-h-[44px] md:min-h-0 px-3 py-2 rounded-lg border text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
               voiceEnabled && voiceSupported
                 ? 'border-teal-600 text-teal-700 dark:text-teal-400 bg-teal-50/70 dark:bg-teal-950/30'
                 : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
@@ -110,7 +148,7 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
         </div>
 
         <div className="flex items-center justify-between gap-3 text-xs">
-          <label className="inline-flex items-center gap-2 text-slate-700 dark:text-slate-300 cursor-pointer select-none">
+          <label className="inline-flex items-center gap-2 min-h-[36px] md:min-h-0 text-slate-700 dark:text-slate-300 cursor-pointer select-none">
             <input
               type="checkbox"
               checked={gpsFollowEnabled}
@@ -118,7 +156,7 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
             />
             <Crosshair className="w-3.5 h-3.5 text-slate-500" />
-            Auto-advance via GPS
+            Live GPS auto-follow
           </label>
 
           {voiceSupported && (
@@ -128,7 +166,7 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
                 aria-label="Voice speed"
                 value={voiceRate}
                 onChange={e => onChangeVoiceRate(Number(e.target.value))}
-                className="py-1 px-1.5 text-xs rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 font-mono"
+                className="py-1.5 md:py-1 px-2 text-base md:text-xs rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 font-mono"
               >
                 <option value={0.9}>0.9x</option>
                 <option value={1.0}>1.0x</option>
@@ -167,7 +205,7 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
                         onSelectStep(currentIdx);
                         onSpeakStep(step);
                       }}
-                      className={`w-full text-left px-4 py-3 flex items-start gap-3 transition-colors ${
+                      className={`w-full text-left px-4 py-3.5 md:py-3 min-h-[56px] md:min-h-0 flex items-start gap-3 transition-colors ${
                         isActive
                           ? 'bg-teal-50 dark:bg-teal-950/30'
                           : 'hover:bg-slate-50 dark:hover:bg-slate-900/40'

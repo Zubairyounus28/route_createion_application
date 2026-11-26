@@ -70,7 +70,7 @@ export const SidebarSaved: React.FC<SidebarSavedProps> = ({
               type="button"
               onClick={onSignIn}
               disabled={!isOnline}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 dark:bg-teal-600 text-white text-xs font-medium hover:bg-slate-800 dark:hover:bg-teal-700 disabled:opacity-50 transition-colors"
+              className="inline-flex items-center justify-center gap-1.5 min-h-[44px] md:min-h-0 px-4 md:px-3 py-2 md:py-1.5 rounded-lg bg-slate-900 dark:bg-teal-600 text-white text-xs font-medium hover:bg-slate-800 dark:hover:bg-teal-700 disabled:opacity-50 transition-colors"
             >
               <LogIn className="w-3.5 h-3.5" />
               Sign in with Google
@@ -119,7 +119,7 @@ export const SidebarSaved: React.FC<SidebarSavedProps> = ({
                       type="button"
                       onClick={() => onLoadSyncedTour(tour)}
                       title="Load tour"
-                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-teal-600 hover:bg-teal-700 text-white text-xs font-medium transition-colors"
+                      className="inline-flex items-center justify-center gap-1 min-h-[40px] md:min-h-0 px-3 md:px-2.5 py-2 md:py-1.5 rounded-md bg-teal-600 hover:bg-teal-700 text-white text-xs font-medium transition-colors"
                     >
                       <Play className="w-3 h-3" />
                       Load
@@ -128,7 +128,7 @@ export const SidebarSaved: React.FC<SidebarSavedProps> = ({
                       type="button"
                       onClick={() => onDeleteSyncedTour(tour.id)}
                       aria-label={`Delete ${tour.title}`}
-                      className="p-1.5 rounded-md text-slate-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+                      className="min-w-[40px] min-h-[40px] md:min-w-0 md:min-h-0 p-2 md:p-1.5 flex items-center justify-center rounded-md text-slate-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
@@ -197,7 +197,7 @@ export const SidebarSaved: React.FC<SidebarSavedProps> = ({
                   <button
                     type="button"
                     onClick={() => onLoadOfflineTour(item)}
-                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 text-white text-xs font-medium transition-colors"
+                    className="inline-flex items-center justify-center gap-1 min-h-[40px] md:min-h-0 px-3 md:px-2.5 py-2 md:py-1.5 rounded-md bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 text-white text-xs font-medium transition-colors"
                   >
                     Open
                   </button>
@@ -205,7 +205,7 @@ export const SidebarSaved: React.FC<SidebarSavedProps> = ({
                     type="button"
                     onClick={() => onRemoveOfflineTour(item.id)}
                     aria-label={`Remove cached ${item.title}`}
-                    className="p-1.5 rounded-md text-slate-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+                    className="min-w-[40px] min-h-[40px] md:min-w-0 md:min-h-0 p-2 md:p-1.5 flex items-center justify-center rounded-md text-slate-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>

@@ -80,7 +80,7 @@ export const AreaSearchInput: React.FC<AreaSearchInputProps> = ({
           type="button"
           onClick={onUseCurrentLocation}
           disabled={isLocating}
-          className="inline-flex items-center gap-1.5 text-xs font-medium text-teal-600 dark:text-teal-400 hover:text-teal-700 dark:hover:text-teal-300 disabled:opacity-50 transition-colors whitespace-nowrap shrink-0"
+          className="inline-flex items-center gap-1.5 min-h-[40px] md:min-h-0 px-2 -mr-2 text-xs font-medium text-teal-600 dark:text-teal-400 hover:text-teal-700 dark:hover:text-teal-300 disabled:opacity-50 transition-colors whitespace-nowrap shrink-0"
         >
           {isLocating ? (
             <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -108,7 +108,7 @@ export const AreaSearchInput: React.FC<AreaSearchInputProps> = ({
               ? 'Search neighborhood, city, or address...'
               : 'Search unavailable offline'
           }
-          className="w-full pl-9 pr-8 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-500 disabled:opacity-60"
+          className="w-full pl-9 pr-10 py-2.5 md:py-2 text-base md:text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-500 disabled:opacity-60"
         />
         {query && (
           <button
@@ -118,7 +118,7 @@ export const AreaSearchInput: React.FC<AreaSearchInputProps> = ({
               setQuery('');
               resetSession();
             }}
-            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+            className="absolute right-1 top-1/2 -translate-y-1/2 min-w-[38px] min-h-[38px] flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
           >
             <X className="w-4 h-4" />
           </button>
@@ -138,9 +138,9 @@ export const AreaSearchInput: React.FC<AreaSearchInputProps> = ({
                   <button
                     type="button"
                     onClick={() => void handleSelectSuggestion(suggestion)}
-                    className="w-full text-left px-3 py-2.5 text-xs hover:bg-slate-50 dark:hover:bg-slate-800/70 transition-colors flex items-start gap-2"
+                    className="w-full text-left px-3 py-3 md:py-2.5 min-h-[44px] md:min-h-0 text-sm md:text-xs hover:bg-slate-50 dark:hover:bg-slate-800/70 transition-colors flex items-start gap-2"
                   >
-                    <MapPin className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400 shrink-0 mt-0.5" />
+                    <MapPin className="w-4 h-4 md:w-3.5 md:h-3.5 text-teal-600 dark:text-teal-400 shrink-0 mt-0.5" />
                     <span className="text-slate-800 dark:text-slate-200 leading-snug">
                       {suggestion.placePrediction?.text.text}
                     </span>

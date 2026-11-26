@@ -1,7 +1,15 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {APIProvider} from '@vis.gl/react-google-maps';
 import {onAuthStateChanged, signInWithPopup, signOut, type User} from 'firebase/auth';
-import {LogIn, LogOut} from 'lucide-react';
+import {
+  Bookmark,
+  Compass,
+  ListOrdered,
+  LogIn,
+  LogOut,
+  Map as MapIcon,
+  Navigation,
+} from 'lucide-react';
 import {OfflineIndicator} from './components/OfflineIndicator';
 import {SchoolMapCanvas} from './components/SchoolMapCanvas';
 import {SidebarDiscover} from './components/SidebarDiscover';
@@ -21,7 +29,11 @@ import {
   subscribeUserTours,
   updateUserPreferences,
 } from './lib/firebase';
-import {haversineMeters} from './lib/formatters';
+import {
+  distanceToPolylineMeters,
+  haversineMeters,
+  metersToTurnCue,
+} from './lib/formatters';
 import {
   clearOfflineCache,
   getOfflineTours,
@@ -33,6 +45,7 @@ import {
 import type {
   ComputedRouteStep,
   LatLng,
+  LiveTelemetry,
   MapStyleId,
   OfflineCachedTour,
   OriginPoint,
@@ -45,6 +58,7 @@ import type {
 } from './types/navigation';
 
 type SidebarTab = 'discover' | 'tour' | 'navigation' | 'saved';
+type MobileView = 'map' | SidebarTab;
 
 const MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
 
@@ -62,6 +76,7 @@ function CampusRouteWorkspace({
 }) {
   const isOnline = useOnlineStatus();
   const [activeTab, setActiveTab] = useState<SidebarTab>('discover');
+  const [mobileView, setMobileView] = useState<MobileView>('discover');
 
   // Auth & Sync state
   const [user, setUser] = useState<User | null>(null);
@@ -124,12 +139,19 @@ function CampusRouteWorkspace({
   const [mapStyle, setMapStyle] = useState<MapStyleId>('daylight');
   const [showTraffic, setShowTraffic] = useState<boolean>(true);
 
-  // Active Navigation & Voice State
+  // Active Live Navigation & Voice State
   const [isNavigating, setIsNavigating] = useState(false);
   const [activeStepIndex, setActiveStepIndex] = useState(0);
   const [gpsFollowEnabled, setGpsFollowEnabled] = useState(true);
   const [userLiveLocation, setUserLiveLocation] = useState<LatLng | null>(null);
+  const [liveTelemetry, setLiveTelemetry] = useState<LiveTelemetry | null>(null);
+  const [isRerouting, setIsRerouting] = useState(false);
   const voice = useVoiceGuidance(true);
+
+  const approachedStepIdRef = useRef<string | null>(null);
+  const offRouteTicksRef = useRef<number>(0);
+  const lastRerouteAtRef = useRef<number>(0);
+  const pendingLiveStartRef = useRef<boolean>(false);
 
   // Google Maps Hooks
   const {
@@ -156,6 +178,15 @@ function CampusRouteWorkspace({
     roundTrip,
     isOnline,
   });
+
+  // Clear rerouting indicator once route finishes recomputing
+  useEffect(() => {
+    if (!isComputing && isRerouting) {
+      setIsRerouting(false);
+      setActiveStepIndex(0);
+      approachedStepIdRef.current = null;
+    }
+  }, [isComputing, isRerouting]);
 
   // Restore offline computed route on initial load if offline
   const restoredOfflineRef = useRef(false);
@@ -259,15 +290,15 @@ function CampusRouteWorkspace({
     return () => unsub();
   }, [authReady, user]);
 
-  // Search schools automatically when online and origin/radius/level changes
+  // Search schools automatically when online and origin/radius/level changes (skip re-searching schools during active rerouting)
   useEffect(() => {
-    if (!isOnline) return;
+    if (!isOnline || isRerouting) return;
     void searchNearbySchools(
       {lat: origin.lat, lng: origin.lng},
       radiusMiles,
       levelFilter
     );
-  }, [isOnline, origin.lat, origin.lng, radiusMiles, levelFilter, searchNearbySchools]);
+  }, [isOnline, isRerouting, origin.lat, origin.lng, radiusMiles, levelFilter, searchNearbySchools]);
 
   // Request user's current GPS position
   const handleUseCurrentLocation = useCallback(() => {
@@ -275,16 +306,17 @@ function CampusRouteWorkspace({
     setIsLocating(true);
     navigator.geolocation.getCurrentPosition(
       pos => {
+        const coords = {
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+        };
         setOrigin({
           name: 'My Current Location',
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
+          lat: coords.lat,
+          lng: coords.lng,
           isCurrentLocation: true,
         });
-        setUserLiveLocation({
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
-        });
+        setUserLiveLocation(coords);
         setIsLocating(false);
       },
       () => {
@@ -299,12 +331,17 @@ function CampusRouteWorkspace({
     if (!loadLastActiveSession() && 'geolocation' in navigator) {
       navigator.geolocation.getCurrentPosition(
         pos => {
-          setOrigin({
-            name: 'My Current Location',
+          const coords = {
             lat: pos.coords.latitude,
             lng: pos.coords.longitude,
+          };
+          setOrigin({
+            name: 'My Current Location',
+            lat: coords.lat,
+            lng: coords.lng,
             isCurrentLocation: true,
           });
+          setUserLiveLocation(coords);
         },
         () => {
           // Keep DEFAULT_ORIGIN seamlessly
@@ -322,45 +359,195 @@ function CampusRouteWorkspace({
 
   const activeStep = allSteps[activeStepIndex] || null;
 
-  // Live GPS follow during active navigation
+  // Keep phone screen awake during active Car / Bike navigation
   useEffect(() => {
-    if (!isNavigating || !gpsFollowEnabled || !('geolocation' in navigator)) {
+    if (!isNavigating || !('wakeLock' in navigator)) return;
+    let wakeLock: WakeLockSentinel | null = null;
+    let disposed = false;
+
+    const acquire = async () => {
+      try {
+        wakeLock = await navigator.wakeLock.request('screen');
+      } catch {
+        // Ignore if battery saver / browser denies wake lock
+      }
+    };
+
+    void acquire();
+    const onVisibility = () => {
+      if (!disposed && document.visibilityState === 'visible') {
+        void acquire();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
+    return () => {
+      disposed = true;
+      document.removeEventListener('visibilitychange', onVisibility);
+      void wakeLock?.release();
+    };
+  }, [isNavigating]);
+
+  // Live GPS tracking, approach voice cues, step advancement & off-route rerouting for Car & Bike
+  useEffect(() => {
+    if (!isNavigating || !('geolocation' in navigator)) {
       return;
     }
+
+    const advanceThreshold = travelMode === 'DRIVING' ? 50 : 30;
+    const approachThreshold = travelMode === 'DRIVING' ? 180 : 95;
+    const offRouteThreshold = travelMode === 'DRIVING' ? 140 : 90;
+
     const watchId = navigator.geolocation.watchPosition(
       pos => {
-        const currentPos = {
+        const currentPos: LatLng = {
           lat: pos.coords.latitude,
           lng: pos.coords.longitude,
         };
         setUserLiveLocation(currentPos);
 
-        const targetEnd = allSteps[activeStepIndex]?.endLocation;
-        if (targetEnd && haversineMeters(currentPos, targetEnd) < 45) {
+        const currentStep = allSteps[activeStepIndex];
+        const targetEnd = currentStep?.endLocation;
+        const distToTurn = targetEnd
+          ? haversineMeters(currentPos, targetEnd)
+          : null;
+        const distOffRoute =
+          computedRoute?.encodedPolylinePoints.length
+            ? distanceToPolylineMeters(
+                currentPos,
+                computedRoute.encodedPolylinePoints
+              )
+            : null;
+
+        setLiveTelemetry({
+          location: currentPos,
+          heading:
+            typeof pos.coords.heading === 'number' && !Number.isNaN(pos.coords.heading)
+              ? pos.coords.heading
+              : null,
+          speedMps:
+            typeof pos.coords.speed === 'number' && !Number.isNaN(pos.coords.speed)
+              ? pos.coords.speed
+              : null,
+          accuracyMeters:
+            typeof pos.coords.accuracy === 'number'
+              ? pos.coords.accuracy
+              : null,
+          distanceToNextTurnMeters: distToTurn,
+          distanceOffRouteMeters: distOffRoute,
+          updatedAt: Date.now(),
+        });
+
+        // Approach announcement once per step before reaching the turn
+        if (
+          currentStep &&
+          distToTurn !== null &&
+          currentStep.distanceMeters > 240 &&
+          distToTurn <= approachThreshold &&
+          distToTurn > advanceThreshold &&
+          approachedStepIdRef.current !== currentStep.id
+        ) {
+          approachedStepIdRef.current = currentStep.id;
+          const nextStep = allSteps[activeStepIndex + 1];
+          if (nextStep) {
+            voice.speak(
+              `${metersToTurnCue(distToTurn)}, ${nextStep.instruction}`
+            );
+          }
+        }
+
+        // Advance when reaching end of active step, or if rider/driver moved onto a subsequent step
+        let advanced = false;
+        if (distToTurn !== null && distToTurn <= advanceThreshold) {
+          advanced = true;
           if (activeStepIndex < allSteps.length - 1) {
             const nextIdx = activeStepIndex + 1;
             setActiveStepIndex(nextIdx);
             const nextStep = allSteps[nextIdx];
             if (nextStep) {
               voice.speak(
-                `${nextStep.instruction}. In ${nextStep.distanceText}.`
+                `${nextStep.instruction}. ${nextStep.distanceText}.`
               );
             }
           } else {
             voice.speak('You have arrived at your final school stop.');
           }
+        } else if (activeStepIndex < allSteps.length - 1 && distToTurn !== null && distToTurn > 80) {
+          // Look ahead up to 3 steps in case a turn was completed between GPS ticks
+          for (
+            let lookIdx = activeStepIndex + 1;
+            lookIdx < Math.min(allSteps.length, activeStepIndex + 4);
+            lookIdx++
+          ) {
+            const candidateEnd = allSteps[lookIdx]?.endLocation;
+            if (candidateEnd && haversineMeters(currentPos, candidateEnd) < advanceThreshold) {
+              advanced = true;
+              setActiveStepIndex(lookIdx);
+              const nextStep = allSteps[lookIdx];
+              if (nextStep) {
+                voice.speak(`${nextStep.instruction}.`);
+              }
+              break;
+            }
+          }
+        }
+
+        if (advanced) {
+          offRouteTicksRef.current = 0;
+          return;
+        }
+
+        // Automatic live off-route rerouting for Car & Bike
+        if (
+          gpsFollowEnabled &&
+          isOnline &&
+          !isRerouting &&
+          !isComputing &&
+          distOffRoute !== null &&
+          distOffRoute > offRouteThreshold
+        ) {
+          offRouteTicksRef.current += 1;
+          const now = Date.now();
+          if (
+            offRouteTicksRef.current >= 2 &&
+            now - lastRerouteAtRef.current > 15000
+          ) {
+            offRouteTicksRef.current = 0;
+            lastRerouteAtRef.current = now;
+            setIsRerouting(true);
+            voice.speak('Off route. Recalculating directions.');
+            setOrigin({
+              name: 'My Live GPS',
+              lat: currentPos.lat,
+              lng: currentPos.lng,
+              isCurrentLocation: true,
+            });
+          }
+        } else {
+          offRouteTicksRef.current = 0;
         }
       },
       () => {
         // Ignore transient GPS watch warnings
       },
-      {enableHighAccuracy: true, maximumAge: 2000}
+      {enableHighAccuracy: true, maximumAge: 1500, timeout: 10000}
     );
 
     return () => {
       navigator.geolocation.clearWatch(watchId);
     };
-  }, [isNavigating, gpsFollowEnabled, allSteps, activeStepIndex, voice]);
+  }, [
+    isNavigating,
+    gpsFollowEnabled,
+    isOnline,
+    isRerouting,
+    isComputing,
+    travelMode,
+    allSteps,
+    activeStepIndex,
+    computedRoute?.encodedPolylinePoints,
+    voice,
+  ]);
 
   // Handlers
   const handleToggleStop = useCallback((school: SchoolPlace) => {
@@ -420,6 +607,12 @@ function CampusRouteWorkspace({
     [user, isOnline]
   );
 
+  const handleChangeTravelMode = useCallback((mode: TravelModeOption) => {
+    setTravelMode(mode);
+    setActiveStepIndex(0);
+    approachedStepIdRef.current = null;
+  }, []);
+
   const handleToggleVoice = useCallback(() => {
     const next = !voice.enabled;
     voice.setEnabled(next);
@@ -429,32 +622,89 @@ function CampusRouteWorkspace({
     }
   }, [voice, user, isOnline]);
 
+  const beginNavigationSession = useCallback(
+    (stepsToSpeak: ComputedRouteStep[]) => {
+      if (stepsToSpeak.length === 0) return;
+      setActiveStepIndex(0);
+      approachedStepIdRef.current = null;
+      offRouteTicksRef.current = 0;
+      setGpsFollowEnabled(true);
+      setIsNavigating(true);
+      setActiveTab('navigation');
+      setMobileView('map');
+      const first = stepsToSpeak[0];
+      if (first) {
+        const modeWord =
+          travelMode === 'BICYCLING'
+            ? 'bike'
+            : travelMode === 'DRIVING'
+              ? 'car'
+              : 'tour';
+        voice.speak(
+          `Starting live ${modeWord} navigation. ${first.instruction}. For ${first.distanceText}.`,
+          true
+        );
+      }
+    },
+    [travelMode, voice]
+  );
+
   const handleStartNavigation = useCallback(() => {
-    if (allSteps.length === 0) return;
-    setActiveStepIndex(0);
-    setIsNavigating(true);
-    setActiveTab('navigation');
-    const first = allSteps[0];
-    if (first) {
-      voice.speak(
-        `Starting navigation. ${first.instruction}. For ${first.distanceText}.`,
-        true
+    beginNavigationSession(allSteps);
+  }, [allSteps, beginNavigationSession]);
+
+  // Snap origin to live GPS when user taps "Start Live Car/Bike" / "Go Live"
+  const handleStartLiveGpsNavigation = useCallback(() => {
+    if (!origin.isCurrentLocation && isOnline && 'geolocation' in navigator) {
+      pendingLiveStartRef.current = true;
+      setIsLocating(true);
+      navigator.geolocation.getCurrentPosition(
+        pos => {
+          const coords = {
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+          };
+          setUserLiveLocation(coords);
+          setOrigin({
+            name: 'My Live GPS',
+            lat: coords.lat,
+            lng: coords.lng,
+            isCurrentLocation: true,
+          });
+          setIsLocating(false);
+        },
+        () => {
+          pendingLiveStartRef.current = false;
+          setIsLocating(false);
+          beginNavigationSession(allSteps);
+        },
+        {enableHighAccuracy: true, timeout: 4500}
       );
+      return;
     }
-  }, [allSteps, voice]);
+    beginNavigationSession(allSteps);
+  }, [origin.isCurrentLocation, isOnline, allSteps, beginNavigationSession]);
+
+  // Complete deferred live GPS start once the GPS-snapped route computes
+  useEffect(() => {
+    if (pendingLiveStartRef.current && !isComputing && allSteps.length > 0) {
+      pendingLiveStartRef.current = false;
+      beginNavigationSession(allSteps);
+    }
+  }, [isComputing, allSteps, beginNavigationSession]);
 
   const handleStopNavigation = useCallback(() => {
     setIsNavigating(false);
+    setIsRerouting(false);
+    pendingLiveStartRef.current = false;
     voice.stop();
   }, [voice]);
 
-  const handleSelectStep = useCallback(
-    (index: number) => {
-      setActiveStepIndex(index);
-      setIsNavigating(true);
-    },
-    []
-  );
+  const handleSelectStep = useCallback((index: number) => {
+    setActiveStepIndex(index);
+    setIsNavigating(true);
+    setMobileView('map');
+  }, []);
 
   const handleSaveTour = useCallback(async () => {
     setIsSavingTour(true);
@@ -541,6 +791,7 @@ function CampusRouteWorkspace({
     setTourStops(tour.stops);
     setIsNavigating(false);
     setActiveTab('tour');
+    setMobileView('tour');
   }, []);
 
   const handleLoadOfflineTour = useCallback(
@@ -563,6 +814,7 @@ function CampusRouteWorkspace({
       }
       setIsNavigating(false);
       setActiveTab('tour');
+      setMobileView('tour');
     },
     [setComputedRoute]
   );
@@ -580,10 +832,10 @@ function CampusRouteWorkspace({
   }, []);
 
   return (
-    <div className="flex flex-col h-screen w-full overflow-hidden bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100">
+    <div className="flex flex-col h-[100dvh] w-full overflow-hidden bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100">
       {/* Case A Quota Defense Banner */}
       {quotaExceeded && (
-        <div className="bg-amber-50 border-b border-amber-200 text-amber-900 px-4 py-2.5 text-xs md:text-sm text-center sticky top-0 z-50 shadow-sm">
+        <div className="bg-amber-50 border-b border-amber-200 text-amber-900 px-4 py-2 text-xs md:text-sm text-center sticky top-0 z-50 shadow-sm">
           <span>
             Google Maps Platform quota reached. If you are the app owner, visit{' '}
             <a
@@ -600,16 +852,16 @@ function CampusRouteWorkspace({
       )}
 
       {/* Three-Zone Top Bar Contract */}
-      <header className="h-14 shrink-0 px-4 md:px-6 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 flex items-center justify-between gap-8">
+      <header className="h-12 md:h-14 shrink-0 px-4 md:px-6 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 flex items-center justify-between gap-4 md:gap-8">
         {/* Zone 1: Single-line brand wordmark */}
         <a
           href="/"
-          className="font-display text-lg font-bold tracking-tight text-slate-900 dark:text-white whitespace-nowrap shrink-0"
+          className="font-display text-base md:text-lg font-bold tracking-tight text-slate-900 dark:text-white whitespace-nowrap shrink-0"
         >
           CampusRoute
         </a>
 
-        {/* Zone 2: 4 concise single-line navigation links */}
+        {/* Zone 2: 4 concise single-line navigation links (Desktop) */}
         <nav
           aria-label="Workspace sections"
           className="hidden md:flex items-center gap-6 text-sm font-medium"
@@ -643,10 +895,10 @@ function CampusRouteWorkspace({
             <button
               type="button"
               onClick={() => void handleSignOut()}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors whitespace-nowrap shrink-0"
+              className="inline-flex items-center gap-1.5 min-h-[36px] px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors whitespace-nowrap shrink-0"
             >
               <LogOut className="w-3.5 h-3.5" />
-              <span className="max-w-[140px] truncate">
+              <span className="max-w-[110px] md:max-w-[140px] truncate">
                 {user.displayName || user.email || 'Sign out'}
               </span>
             </button>
@@ -655,7 +907,7 @@ function CampusRouteWorkspace({
               type="button"
               onClick={() => void handleSignIn()}
               disabled={!isOnline}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-slate-900 dark:bg-teal-600 hover:bg-slate-800 dark:hover:bg-teal-700 disabled:opacity-50 text-white text-xs font-medium transition-colors whitespace-nowrap shrink-0"
+              className="inline-flex items-center gap-1.5 min-h-[36px] px-3.5 md:px-4 py-1.5 md:py-2 rounded-lg bg-slate-900 dark:bg-teal-600 hover:bg-slate-800 dark:hover:bg-teal-700 disabled:opacity-50 text-white text-xs font-medium transition-colors whitespace-nowrap shrink-0"
             >
               <LogIn className="w-3.5 h-3.5" />
               Sync Devices
@@ -664,35 +916,14 @@ function CampusRouteWorkspace({
         </div>
       </header>
 
-      {/* Mobile Tab Switcher (only shown on small viewports) */}
-      <div className="md:hidden grid grid-cols-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-xs font-medium shrink-0">
-        {(
-          [
-            {id: 'discover', label: 'Discover'},
-            {id: 'tour', label: `Tour (${tourStops.length})`},
-            {id: 'navigation', label: 'Steps'},
-            {id: 'saved', label: 'Saved'},
-          ] as {id: SidebarTab; label: string}[]
-        ).map(item => (
-          <button
-            key={item.id}
-            type="button"
-            onClick={() => setActiveTab(item.id)}
-            className={`py-2.5 text-center border-b-2 transition-colors whitespace-nowrap ${
-              activeTab === item.id
-                ? 'border-teal-600 text-teal-700 dark:text-teal-400 font-semibold'
-                : 'border-transparent text-slate-600 dark:text-slate-400'
-            }`}
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Main Split Workspace */}
+      {/* Main Split Workspace (Desktop split / Mobile single-pane switcher with persistent mounted map) */}
       <main className="flex-1 flex flex-col md:flex-row min-h-0 overflow-hidden">
-        {/* Left Sidebar Planner */}
-        <aside className="w-full md:w-[410px] lg:w-[430px] h-[46vh] md:h-full shrink-0 border-b md:border-b-0 md:border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 flex flex-col min-h-0">
+        {/* Left Sidebar Planner (Full-pane on mobile when a planner tab is selected) */}
+        <aside
+          className={`${
+            mobileView === 'map' ? 'hidden md:flex' : 'flex flex-1 md:flex-initial'
+          } w-full md:w-[410px] lg:w-[430px] h-full shrink-0 md:border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 flex-col min-h-0`}
+        >
           {activeTab === 'discover' && (
             <SidebarDiscover
               origin={origin}
@@ -719,7 +950,9 @@ function CampusRouteWorkspace({
               tourStops={tourStops}
               onToggleStop={handleToggleStop}
               focusedSchoolId={focusedSchoolId}
-              onFocusSchool={id => setFocusedSchoolId(id)}
+              onFocusSchool={id => {
+                setFocusedSchoolId(id);
+              }}
               isOnline={isOnline}
             />
           )}
@@ -732,7 +965,7 @@ function CampusRouteWorkspace({
               isComputing={isComputing}
               routeError={routeError}
               travelMode={travelMode}
-              onChangeTravelMode={setTravelMode}
+              onChangeTravelMode={handleChangeTravelMode}
               routeObjective={routeObjective}
               onChangeRouteObjective={setRouteObjective}
               optimizeOrder={optimizeOrder}
@@ -747,6 +980,7 @@ function CampusRouteWorkspace({
               }}
               onRefreshTraffic={recompute}
               onStartNavigation={handleStartNavigation}
+              onStartLiveGpsNavigation={handleStartLiveGpsNavigation}
               tourTitle={tourTitle}
               onChangeTourTitle={setTourTitle}
               onSaveTour={handleSaveTour}
@@ -760,8 +994,10 @@ function CampusRouteWorkspace({
           {activeTab === 'navigation' && (
             <SidebarNavigation
               computedRoute={computedRoute}
+              travelMode={travelMode}
+              onChangeTravelMode={handleChangeTravelMode}
               isNavigating={isNavigating}
-              onStartNavigation={handleStartNavigation}
+              onStartNavigation={handleStartLiveGpsNavigation}
               onStopNavigation={handleStopNavigation}
               activeStepIndex={activeStepIndex}
               onSelectStep={handleSelectStep}
@@ -802,8 +1038,14 @@ function CampusRouteWorkspace({
           )}
         </aside>
 
-        {/* Right Interactive Google Map Viewport */}
-        <section className="flex-1 h-full min-h-[320px] relative">
+        {/* Right Interactive Google Map Viewport (Kept mounted so switching mobile tabs is instant) */}
+        <section
+          className={`${
+            mobileView === 'map'
+              ? 'flex-1 h-full relative'
+              : 'hidden md:block md:flex-1 md:h-full relative'
+          }`}
+        >
           <SchoolMapCanvas
             origin={origin}
             radiusMiles={radiusMiles}
@@ -818,7 +1060,10 @@ function CampusRouteWorkspace({
             focusedSchoolId={focusedSchoolId}
             onFocusSchool={setFocusedSchoolId}
             onToggleStop={handleToggleStop}
+            travelMode={travelMode}
+            onChangeTravelMode={handleChangeTravelMode}
             isNavigating={isNavigating}
+            onStartLiveGpsNavigation={handleStartLiveGpsNavigation}
             onStopNavigation={handleStopNavigation}
             activeStep={activeStep}
             activeStepIndex={activeStepIndex}
@@ -826,6 +1071,7 @@ function CampusRouteWorkspace({
             onPrevStep={() => {
               const prev = Math.max(0, activeStepIndex - 1);
               setActiveStepIndex(prev);
+              approachedStepIdRef.current = null;
               const step = allSteps[prev];
               if (step) {
                 voice.speak(`${step.instruction}. ${step.distanceText}.`, true);
@@ -834,6 +1080,7 @@ function CampusRouteWorkspace({
             onNextStep={() => {
               const next = Math.min(allSteps.length - 1, activeStepIndex + 1);
               setActiveStepIndex(next);
+              approachedStepIdRef.current = null;
               const step = allSteps[next];
               if (step) {
                 voice.speak(`${step.instruction}. ${step.distanceText}.`, true);
@@ -850,9 +1097,67 @@ function CampusRouteWorkspace({
             voiceEnabled={voice.enabled}
             onToggleVoice={handleToggleVoice}
             userLiveLocation={userLiveLocation}
+            liveTelemetry={liveTelemetry}
+            gpsFollowEnabled={gpsFollowEnabled}
+            onToggleGpsFollow={() => setGpsFollowEnabled(v => !v)}
+            onDisableGpsFollow={() => setGpsFollowEnabled(false)}
+            isRerouting={isRerouting}
+            isComputing={isComputing}
+            isVisibleOnMobile={mobileView === 'map'}
           />
         </section>
       </main>
+
+      {/* Mobile Bottom Thumb-Zone Navigation Bar */}
+      <nav
+        aria-label="Mobile navigation"
+        className="md:hidden shrink-0 border-t border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-950/95 backdrop-blur pb-safe z-30"
+      >
+        <div className="grid grid-cols-5 h-14">
+          {(
+            [
+              {id: 'map', label: 'Map', icon: MapIcon},
+              {id: 'discover', label: 'Discover', icon: Compass},
+              {
+                id: 'tour',
+                label: tourStops.length > 0 ? `Tour (${tourStops.length})` : 'Tour',
+                icon: ListOrdered,
+              },
+              {id: 'navigation', label: 'Steps', icon: Navigation},
+              {id: 'saved', label: 'Saved', icon: Bookmark},
+            ] as {
+              id: MobileView;
+              label: string;
+              icon: React.ComponentType<{className?: string}>;
+            }[]
+          ).map(item => {
+            const Icon = item.icon;
+            const isActive = mobileView === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => {
+                  setMobileView(item.id);
+                  if (item.id !== 'map') {
+                    setActiveTab(item.id);
+                  }
+                }}
+                className={`flex flex-col items-center justify-center gap-0.5 min-h-[48px] px-1 transition-colors ${
+                  isActive
+                    ? 'text-teal-600 dark:text-teal-400 font-semibold'
+                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                }`}
+              >
+                <Icon className="w-5 h-5" />
+                <span className="text-[11px] leading-none whitespace-nowrap">
+                  {item.label}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </nav>
 
       <OfflineIndicator />
     </div>

@@ -127,37 +127,67 @@ export function useMultiStopRoute({
         // Step 1: Optimize waypoint order first if requested (SHORTER_DISTANCE cannot combine with optimizeWaypointOrder)
         let primaryRoute: google.maps.routes.Route | null = null;
         let optimizedIndices: number[] = [];
+        let routeFallbackNote: string | undefined;
 
-        if (canOptimize || !wantsShortest) {
-          const request: google.maps.routes.ComputeRoutesRequest = {
+        const executeComputeRoutes = async (
+          modeToUse: google.maps.TravelMode,
+          withShortestRef = false
+        ) => {
+          const req: google.maps.routes.ComputeRoutesRequest = {
             origin: originLatLng,
             destination,
             intermediates: intermediates.length > 0 ? intermediates : undefined,
-            travelMode: sdkTravelMode,
+            travelMode: modeToUse,
             fields: baseFields,
             units: coreLib?.UnitSystem.IMPERIAL,
-            optimizeWaypointOrder: canOptimize,
+            optimizeWaypointOrder: withShortestRef ? false : canOptimize,
             internalUsageAttributionIds: ['gmp_mcp_codeassist_v1_aistudio'],
           };
 
-          if (travelMode === 'DRIVING') {
-            request.routingPreference =
-              routesLib.RoutingPreference.TRAFFIC_AWARE;
+          if (modeToUse === routesLib.TravelMode.DRIVING) {
+            req.routingPreference = routesLib.RoutingPreference.TRAFFIC_AWARE;
+          }
+          if (withShortestRef) {
+            req.requestedReferenceRoutes = [
+              routesLib.ReferenceRoute.SHORTER_DISTANCE,
+            ];
+          }
+          return routesLib.Route.computeRoutes(req);
+        };
+
+        if (canOptimize || !wantsShortest) {
+          let res: Awaited<ReturnType<typeof executeComputeRoutes>> | null = null;
+          try {
+            res = await executeComputeRoutes(sdkTravelMode, false);
+          } catch (err) {
+            if (travelMode === 'BICYCLING') {
+              res = await executeComputeRoutes(routesLib.TravelMode.DRIVING, false);
+              routeFallbackNote =
+                'Dedicated bike lanes unavailable here — using road bike route.';
+            } else {
+              throw err;
+            }
           }
 
-          const res = await routesLib.Route.computeRoutes(request);
-          if (!res.routes || res.routes.length === 0) {
+          if ((!res?.routes || res.routes.length === 0) && travelMode === 'BICYCLING') {
+            res = await executeComputeRoutes(routesLib.TravelMode.DRIVING, false);
+            routeFallbackNote =
+              'Dedicated bike lanes unavailable here — using road bike route.';
+          }
+
+          const chosenRoute = res?.routes?.[0] ?? null;
+          if (!chosenRoute) {
             throw new Error('No route found between the selected school stops.');
           }
-          primaryRoute = res.routes[0];
+          primaryRoute = chosenRoute;
 
           if (
             canOptimize &&
-            Array.isArray(primaryRoute.optimizedIntermediateWaypointIndices) &&
-            primaryRoute.optimizedIntermediateWaypointIndices.length > 0
+            Array.isArray(chosenRoute.optimizedIntermediateWaypointIndices) &&
+            chosenRoute.optimizedIntermediateWaypointIndices.length > 0
           ) {
             optimizedIndices = [
-              ...primaryRoute.optimizedIntermediateWaypointIndices,
+              ...chosenRoute.optimizedIntermediateWaypointIndices,
             ];
             if (roundTrip) {
               orderedStops = optimizedIndices.map(idx => stops[idx]);
@@ -301,6 +331,7 @@ export function useMultiStopRoute({
             legs,
             encodedPolylinePoints: pathPoints,
             computedAt: Date.now(),
+            routeFallbackNote,
           });
         }
       } catch (err) {

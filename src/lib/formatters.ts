@@ -57,3 +57,55 @@ export function haversineMeters(
     Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * sinDLng * sinDLng;
   return 2 * R * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
 }
+
+export function pointToSegmentDistanceMeters(
+  p: {lat: number; lng: number},
+  a: {lat: number; lng: number},
+  b: {lat: number; lng: number}
+): number {
+  const latScale = 111320;
+  const lngScale = 111320 * Math.cos((p.lat * Math.PI) / 180);
+  const ax = (a.lng - p.lng) * lngScale;
+  const ay = (a.lat - p.lat) * latScale;
+  const bx = (b.lng - p.lng) * lngScale;
+  const by = (b.lat - p.lat) * latScale;
+  const dx = bx - ax;
+  const dy = by - ay;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) return Math.hypot(ax, ay);
+  const t = Math.max(0, Math.min(1, -(ax * dx + ay * dy) / lenSq));
+  const projX = ax + t * dx;
+  const projY = ay + t * dy;
+  return Math.hypot(projX, projY);
+}
+
+export function distanceToPolylineMeters(
+  p: {lat: number; lng: number},
+  path: {lat: number; lng: number}[]
+): number {
+  if (path.length === 0) return 0;
+  if (path.length === 1) return haversineMeters(p, path[0]);
+  let minDist = Infinity;
+  for (let i = 0; i < path.length - 1; i++) {
+    const d = pointToSegmentDistanceMeters(p, path[i], path[i + 1]);
+    if (d < minDist) minDist = d;
+  }
+  return minDist;
+}
+
+export function mpsToMphText(speedMps: number | null): string {
+  if (speedMps === null || Number.isNaN(speedMps) || speedMps < 0.4) {
+    return '0 mph';
+  }
+  const mph = Math.round(speedMps * 2.23694);
+  return `${mph} mph`;
+}
+
+export function metersToTurnCue(meters: number): string {
+  if (meters < 30) return 'now';
+  const feet = Math.round((meters * 3.28084) / 50) * 50;
+  if (feet < 950) {
+    return `in ${Math.max(50, feet)} ft`;
+  }
+  return `in ${(meters / 1609.344).toFixed(1)} mi`;
+}

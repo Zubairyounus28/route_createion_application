@@ -84,6 +84,17 @@ export interface ComputedTourRoute {
   legs: ComputedRouteLeg[];
   encodedPolylinePoints: LatLng[];
   computedAt: number;
+  routeFallbackNote?: string;
+}
+
+export interface LiveTelemetry {
+  location: LatLng;
+  heading: number | null;
+  speedMps: number | null;
+  accuracyMeters: number | null;
+  distanceToNextTurnMeters: number | null;
+  distanceOffRouteMeters: number | null;
+  updatedAt: number;
 }
 
 export interface SyncedSchoolTour {
