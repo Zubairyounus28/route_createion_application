@@ -131,8 +131,10 @@ export const SidebarDiscover: React.FC<SidebarDiscoverProps> = ({
 
   return (
     <div className="flex flex-col h-full min-h-0">
-      <div className="p-3 sm:p-4 border-b border-slate-200 dark:border-slate-800 space-y-2.5 sm:space-y-3 shrink-0">
-        {/* Step 1: Target Area to Find Schools & Places */}
+      {/* Unified Scrollable Setup + Results Container */}
+      <div className="flex-1 overflow-y-auto min-h-0">
+        <div className="p-3 sm:p-4 border-b border-slate-200 dark:border-slate-800 space-y-2.5 sm:space-y-3">
+          {/* Step 1: Target Area to Find Schools & Places */}
         <AreaSearchInput
           inputId="target-area-input"
           label="1. Target Area (Search Schools & Places)"
@@ -430,7 +432,6 @@ export const SidebarDiscover: React.FC<SidebarDiscoverProps> = ({
       </div>
 
       {/* Results List */}
-      <div className="flex-1 overflow-y-auto min-h-0">
         {searchError && (
           <div className="m-3 p-3 rounded-lg border border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/30 text-xs text-red-700 dark:text-red-300">
             {searchError}

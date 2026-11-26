@@ -71,9 +71,9 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
   let runningIndex = 0;
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full min-h-0 overflow-y-auto">
       {/* Voice, Car/Bike Switch & Live GPS Controls */}
-      <div className="p-4 border-b border-slate-200 dark:border-slate-800 space-y-3">
+      <div className="p-3 sm:p-4 border-b border-slate-200 dark:border-slate-800 space-y-2.5 sm:space-y-3 shrink-0">
         {/* Quick Car vs Bike Switcher */}
         <div className="grid grid-cols-2 gap-1 p-1 rounded-lg bg-slate-100 dark:bg-slate-800/80">
           <button
@@ -178,7 +178,7 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
       </div>
 
       {/* Leg-by-Leg & Step-by-Step Instructions */}
-      <div className="flex-1 overflow-y-auto divide-y divide-slate-200 dark:divide-slate-800">
+      <div className="divide-y divide-slate-200 dark:divide-slate-800">
         {computedRoute.legs.map(leg => (
           <div key={leg.legIndex} className="pb-2">
             <div className="sticky top-0 z-10 px-4 py-2.5 bg-slate-100/95 dark:bg-slate-900/95 backdrop-blur border-b border-slate-200 dark:border-slate-800">

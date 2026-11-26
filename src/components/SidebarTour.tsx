@@ -111,8 +111,9 @@ export const SidebarTour: React.FC<SidebarTourProps> = ({
 
   return (
     <div className="flex flex-col h-full min-h-0">
-      <div className="p-3 sm:p-4 border-b border-slate-200 dark:border-slate-800 space-y-3 shrink-0">
-        {/* Travel Mode Selector */}
+      <div className="flex-1 overflow-y-auto min-h-0">
+        <div className="p-3 sm:p-4 border-b border-slate-200 dark:border-slate-800 space-y-2.5 sm:space-y-3">
+          {/* Travel Mode Selector */}
         <div className="grid grid-cols-4 gap-1 p-1 rounded-lg bg-slate-100 dark:bg-slate-800/80">
           {(
             [
@@ -301,7 +302,6 @@ export const SidebarTour: React.FC<SidebarTourProps> = ({
       </div>
 
       {/* Ordered Itinerary List */}
-      <div className="flex-1 overflow-y-auto min-h-0">
         {/* Your Starting Location Card / Row */}
         <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/40 space-y-2">
           {!hasCustomStartLocation ? (

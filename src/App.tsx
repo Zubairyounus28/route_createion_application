@@ -1128,7 +1128,7 @@ function CampusRouteWorkspace({
     <div className="flex flex-col h-[100dvh] w-full overflow-hidden bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100">
       {/* Case A Quota Defense Banner */}
       {quotaExceeded && (
-        <div className="bg-amber-50 border-b border-amber-200 text-amber-900 px-4 py-2 text-xs md:text-sm text-center sticky top-0 z-50 shadow-sm">
+        <div className="bg-amber-50 border-b border-amber-200 text-amber-900 px-3 py-1.5 md:px-4 md:py-2 text-[11px] leading-snug md:text-sm text-center sticky top-0 z-50 shadow-sm shrink-0">
           <span>
             Google Maps Platform quota reached. If you are the app owner, visit{' '}
             <a
@@ -1145,7 +1145,7 @@ function CampusRouteWorkspace({
       )}
 
       {/* Three-Zone Top Bar Contract */}
-      <header className="h-12 md:h-14 shrink-0 px-4 md:px-6 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 flex items-center justify-between gap-4 md:gap-8">
+      <header className="h-11 md:h-14 shrink-0 px-3 sm:px-4 md:px-6 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 flex items-center justify-between gap-3 md:gap-8">
         <a
           href="/"
           className="font-display text-base md:text-lg font-bold tracking-tight text-slate-900 dark:text-white whitespace-nowrap shrink-0"
@@ -1155,7 +1155,7 @@ function CampusRouteWorkspace({
 
         <nav
           aria-label="Workspace sections"
-          className="hidden md:flex items-center gap-6 text-sm font-medium"
+          className="hidden md:flex items-center gap-4 lg:gap-6 text-xs lg:text-sm font-medium"
         >
           {(
             [
@@ -1215,8 +1215,8 @@ function CampusRouteWorkspace({
 
       {/* Main Split Workspace: Always-Visible Map + Desktop Sidebar + Mobile Interactive Bottom Sheet */}
       <main className="flex-1 relative flex flex-col md:flex-row min-h-0 overflow-hidden">
-        {/* Desktop Sidebar */}
-        <aside className="hidden md:flex w-[410px] lg:w-[430px] h-full shrink-0 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 flex-col min-h-0">
+        {/* Desktop / Tablet Sidebar */}
+        <aside className="hidden md:flex md:w-[360px] lg:w-[410px] xl:w-[430px] h-full shrink-0 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 flex-col min-h-0">
           {activeTabContent}
         </aside>
 
@@ -1289,11 +1289,11 @@ function CampusRouteWorkspace({
         {/* Mobile Resizable Bottom Sheet over Live Map */}
         {showMobileSheet && (
           <div
-            className={`md:hidden absolute left-0 right-0 bottom-0 z-20 flex flex-col rounded-t-3xl bg-white/97 dark:bg-slate-950/97 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 shadow-[0_-10px_32px_rgba(15,23,42,0.14)] overflow-hidden ${
+            className={`md:hidden absolute left-0 right-0 bottom-0 z-20 flex flex-col rounded-t-2xl bg-white/98 dark:bg-slate-950/98 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 shadow-[0_-10px_32px_rgba(15,23,42,0.14)] overflow-hidden transition-[height] duration-150 ${
               sheetSnap === 'full'
-                ? 'h-[92%]'
+                ? 'h-[94%]'
                 : sheetSnap === 'half'
-                  ? 'h-[56%]'
+                  ? 'h-[66%]'
                   : 'h-auto'
             }`}
           >
@@ -1307,12 +1307,12 @@ function CampusRouteWorkspace({
                 type="button"
                 onClick={cycleSheetSnap}
                 aria-label="Resize panel"
-                className="w-full pt-2 pb-1 flex justify-center"
+                className="w-full pt-1.5 pb-1 flex justify-center"
               >
-                <span className="w-10 h-1.5 rounded-full bg-slate-300 dark:bg-slate-700" />
+                <span className="w-10 h-1 rounded-full bg-slate-300 dark:bg-slate-700" />
               </button>
 
-              <div className="px-4 pb-2.5 flex items-center justify-between gap-2">
+              <div className="px-3.5 pb-2 flex items-center justify-between gap-2">
                 <button
                   type="button"
                   onClick={() =>
