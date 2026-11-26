@@ -196,11 +196,10 @@ export const SidebarTour: React.FC<SidebarTourProps> = ({
               <input
                 type="checkbox"
                 checked={optimizeOrder}
-                disabled={travelMode === 'TRANSIT'}
                 onChange={onToggleOptimizeOrder}
                 className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
               />
-              Auto-optimize stop order
+              Auto-arrange nearest first
             </label>
 
             <label className="inline-flex items-center gap-2 min-h-[34px] text-slate-700 dark:text-slate-300 cursor-pointer select-none">
@@ -254,10 +253,11 @@ export const SidebarTour: React.FC<SidebarTourProps> = ({
                   Clear traffic
                 </span>
               )}
-              {computedRoute.optimizedOrderIndices.length > 0 && (
+              {(optimizeOrder ||
+                computedRoute.optimizedOrderIndices.length > 0) && (
                 <>
                   <span aria-hidden="true">·</span>
-                  <span>Optimized</span>
+                  <span>Nearest-first</span>
                 </>
               )}
             </div>

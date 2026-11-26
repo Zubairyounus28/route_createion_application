@@ -47,8 +47,14 @@ function toLatLng(
   return {lat, lng};
 }
 
-function nearestNeighborSort(origin: LatLng, stops: TourStop[]): TourStop[] {
+function optimizeNearestChain(
+  origin: LatLng,
+  stops: TourStop[],
+  roundTrip: boolean
+): TourStop[] {
   if (stops.length <= 1) return [...stops];
+
+  // 1. Greedy nearest-neighbor chain: Start -> nearest #1 -> nearest #2 -> ...
   const remaining = [...stops];
   const ordered: TourStop[] = [];
   let current: LatLng = origin;
@@ -67,6 +73,47 @@ function nearestNeighborSort(origin: LatLng, stops: TourStop[]): TourStop[] {
     ordered.push(picked);
     current = {lat: picked.lat, lng: picked.lng};
   }
+
+  // 2. Quick 2-opt refinement to eliminate crossing/backtracking segments
+  if (ordered.length >= 3) {
+    const path: LatLng[] = [origin, ...ordered];
+    let improved = true;
+    let passes = 0;
+
+    while (improved && passes < 20) {
+      improved = false;
+      passes += 1;
+
+      for (let i = 0; i < path.length - 2; i++) {
+        for (let j = i + 2; j < path.length; j++) {
+          const nextAfterJ = j + 1 < path.length ? path[j + 1] : roundTrip ? origin : null;
+          const before =
+            haversineMeters(path[i], path[i + 1]) +
+            (nextAfterJ ? haversineMeters(path[j], nextAfterJ) : 0);
+          const after =
+            haversineMeters(path[i], path[j]) +
+            (nextAfterJ ? haversineMeters(path[i + 1], nextAfterJ) : 0);
+
+          if (after + 1 < before) {
+            // Reverse path[i + 1 .. j]
+            let left = i + 1;
+            let right = j;
+            while (left < right) {
+              const tmp = path[left];
+              path[left] = path[right];
+              path[right] = tmp;
+              left += 1;
+              right -= 1;
+            }
+            improved = true;
+          }
+        }
+      }
+    }
+
+    return path.slice(1) as TourStop[];
+  }
+
   return ordered;
 }
 
@@ -154,12 +201,14 @@ export function useMultiStopRoute({
         ];
 
         const originLatLng: LatLng = {lat: origin.lat, lng: origin.lng};
-        let orderedStops = [...stops];
+        let orderedStops = optimizeOrder
+          ? optimizeNearestChain(originLatLng, stops, roundTrip)
+          : [...stops];
 
         const canOptimize =
           optimizeOrder &&
           travelMode !== 'TRANSIT' &&
-          (roundTrip ? stops.length >= 2 : stops.length >= 3);
+          (roundTrip ? orderedStops.length >= 2 : orderedStops.length >= 3);
 
         const buildWaypoints = (currentStops: TourStop[]) => {
           if (roundTrip) {
@@ -278,6 +327,7 @@ export function useMultiStopRoute({
           const {destination, intermediates} = buildWaypoints(orderedStops);
 
           if (canOptimize) {
+            const baseBeforeApi = [...orderedStops];
             primaryRoute = await runSingleRequest({
               to: destination,
               vias: intermediates,
@@ -294,18 +344,18 @@ export function useMultiStopRoute({
                 ...primaryRoute.optimizedIntermediateWaypointIndices,
               ];
               if (roundTrip) {
-                orderedStops = optimizedIndices.map(idx => stops[idx]);
+                orderedStops = optimizedIndices.map(idx => baseBeforeApi[idx]);
               } else {
                 const reorderedPrefix = optimizedIndices.map(
-                  idx => stops[idx]
+                  idx => baseBeforeApi[idx]
                 );
-                orderedStops = [...reorderedPrefix, stops[stops.length - 1]];
+                orderedStops = [
+                  ...reorderedPrefix,
+                  baseBeforeApi[baseBeforeApi.length - 1],
+                ];
               }
             } else if (!primaryRoute) {
-              // Retry same mode without waypoint optimization
-              if (optimizeOrder) {
-                orderedStops = nearestNeighborSort(originLatLng, stops);
-              }
+              // Retry same mode without waypoint optimization (keeps nearest-neighbor chain)
               const nextWp = buildWaypoints(orderedStops);
               primaryRoute = await runSingleRequest({
                 to: nextWp.destination,
@@ -487,8 +537,8 @@ export function useMultiStopRoute({
         }
 
         // Resilient Leg-by-Leg Stitching Fallback (handles multi-stop Transit & isolated pedestrian/plaza stops)
-        if (optimizeOrder && travelMode !== 'TRANSIT') {
-          orderedStops = nearestNeighborSort(originLatLng, stops);
+        if (optimizeOrder) {
+          orderedStops = optimizeNearestChain(originLatLng, stops, roundTrip);
         }
 
         interface SegmentSpec {

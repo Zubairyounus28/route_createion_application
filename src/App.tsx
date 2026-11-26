@@ -932,6 +932,10 @@ function CampusRouteWorkspace({
     );
   };
 
+  const orderedTourStops = computedRoute?.orderedStops.length
+    ? computedRoute.orderedStops
+    : tourStops;
+
   const activeTabContent = (
     <>
       {activeTab === 'discover' && (
@@ -967,7 +971,7 @@ function CampusRouteWorkspace({
               searchQuery
             )
           }
-          tourStops={tourStops}
+          tourStops={orderedTourStops}
           onToggleStop={handleToggleStop}
           focusedSchoolId={focusedSchoolId}
           onFocusSchool={id => {
@@ -1017,7 +1021,7 @@ function CampusRouteWorkspace({
               searchQuery
             )
           }
-          tourStops={tourStops}
+          tourStops={orderedTourStops}
           onToggleStop={handleToggleStop}
           onRemoveStop={handleRemoveStop}
           onClearStops={() => {
