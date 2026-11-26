@@ -27,6 +27,7 @@ import {
   X,
 } from 'lucide-react';
 import {
+  formatPlaceTypeLabel,
   metersToMilesText,
   metersToTurnCue,
   millisToDurationText,
@@ -80,6 +81,7 @@ interface SchoolMapCanvasProps {
   isRerouting: boolean;
   isComputing: boolean;
   isVisibleOnMobile: boolean;
+  showMobileQuickLaunch?: boolean;
 }
 
 const DEFAULT_CENTER: LatLng = {lat: 37.4419, lng: -122.143};
@@ -90,6 +92,25 @@ const MAP_STYLE_OPTIONS: {id: MapStyleId; label: string}[] = [
   {id: 'terrain', label: 'Terrain'},
   {id: 'hybrid', label: 'Hybrid'},
 ];
+
+function getCategoryPinColor(primaryType?: string, isFocused = false): string {
+  if (isFocused) return '#0D9488';
+  switch (primaryType) {
+    case 'book_store':
+      return '#7C3AED';
+    case 'library':
+      return '#0284C7';
+    case 'cafe':
+    case 'coffee_shop':
+      return '#D97706';
+    case 'department_store':
+    case 'store':
+    case 'electronics_store':
+      return '#EA580C';
+    default:
+      return '#334155';
+  }
+}
 
 export const SchoolMapCanvas: React.FC<SchoolMapCanvasProps> = ({
   origin,
@@ -126,6 +147,7 @@ export const SchoolMapCanvas: React.FC<SchoolMapCanvasProps> = ({
   isRerouting,
   isComputing,
   isVisibleOnMobile,
+  showMobileQuickLaunch = false,
 }) => {
   const map = useMap();
   const mapsLib = useMapsLibrary('maps');
@@ -148,10 +170,33 @@ export const SchoolMapCanvas: React.FC<SchoolMapCanvasProps> = ({
     stopOrderByPlaceId[stop.placeId] = index + 1;
   });
 
-  const focusedSchool =
-    schools.find(s => s.placeId === focusedSchoolId) || null;
+  // Look up focused place across discovered places first, falling back to saved tour stops
+  const focusedSchool: SchoolPlace | null = (() => {
+    if (!focusedSchoolId) return null;
+    const found = schools.find(s => s.placeId === focusedSchoolId);
+    if (found) return found;
+    const stopMatch = displayedStops.find(s => s.placeId === focusedSchoolId);
+    if (stopMatch) {
+      return {
+        placeId: stopMatch.placeId,
+        name: stopMatch.name,
+        address: stopMatch.address,
+        lat: stopMatch.lat,
+        lng: stopMatch.lng,
+        rating: stopMatch.rating,
+        primaryType: stopMatch.primaryType,
+      };
+    }
+    return null;
+  })();
 
-  // Trigger resize/re-fit when mobile map tab becomes visible
+  // Pan to focused place when selected from list
+  useEffect(() => {
+    if (!map || !focusedSchool || isNavigating) return;
+    map.panTo({lat: focusedSchool.lat, lng: focusedSchool.lng});
+  }, [map, focusedSchool?.placeId, isNavigating]);
+
+  // Trigger resize/re-fit when mobile map visibility changes
   useEffect(() => {
     if (!map || !isVisibleOnMobile) return;
     const timer = window.setTimeout(() => {
@@ -207,7 +252,7 @@ export const SchoolMapCanvas: React.FC<SchoolMapCanvasProps> = ({
     travelMode,
   ]);
 
-  // Draw 5-mile (or selected) radius circle around origin
+  // Draw radius circle around origin
   useEffect(() => {
     if (!map || !mapsLib || !origin) {
       if (circleRef.current) {
@@ -254,7 +299,7 @@ export const SchoolMapCanvas: React.FC<SchoolMapCanvasProps> = ({
     };
   }, [map, mapsLib, showTraffic]);
 
-  // Render route polylines (live SDK route or offline cached points)
+  // Render route polylines (live SDK route or stitched/cached polyline points)
   useEffect(() => {
     polylinesRef.current.forEach(p => p.setMap(null));
     polylinesRef.current = [];
@@ -359,7 +404,7 @@ export const SchoolMapCanvas: React.FC<SchoolMapCanvasProps> = ({
       : activeStep?.distanceText || '';
 
   return (
-    <div className="relative w-full h-full min-h-[280px] bg-slate-200 dark:bg-slate-900">
+    <div className="relative w-full h-full min-h-[260px] bg-slate-200 dark:bg-slate-900">
       <GoogleMap
         defaultCenter={origin ? {lat: origin.lat, lng: origin.lng} : DEFAULT_CENTER}
         defaultZoom={12}
@@ -425,28 +470,29 @@ export const SchoolMapCanvas: React.FC<SchoolMapCanvasProps> = ({
           </AdvancedMarker>
         )}
 
-        {/* Discovered Schools (non-tour stops) */}
+        {/* Discovered Places (non-tour stops) */}
         {schools
           .filter(s => !stopOrderByPlaceId[s.placeId])
-          .map(school => (
+          .map(place => (
             <AdvancedMarker
-              key={school.placeId}
-              position={{lat: school.lat, lng: school.lng}}
-              title={school.name}
-              zIndex={10}
+              key={place.placeId}
+              position={{lat: place.lat, lng: place.lng}}
+              title={place.name}
+              zIndex={focusedSchoolId === place.placeId ? 30 : 10}
               onClick={e => {
-                onFocusSchool(school.placeId);
+                onFocusSchool(place.placeId);
                 const el = e.target as google.maps.marker.AdvancedMarkerElement | null;
-                setSelectedMarker(el ? {placeId: school.placeId, el} : null);
+                setSelectedMarker(el ? {placeId: place.placeId, el} : null);
               }}
             >
               <Pin
-                background={
-                  focusedSchoolId === school.placeId ? '#0284C7' : '#334155'
-                }
+                background={getCategoryPinColor(
+                  place.primaryType,
+                  focusedSchoolId === place.placeId
+                )}
                 borderColor="#FFFFFF"
                 glyphColor="#FFFFFF"
-                scale={focusedSchoolId === school.placeId ? 1.15 : 0.95}
+                scale={focusedSchoolId === place.placeId ? 1.15 : 0.95}
               />
             </AdvancedMarker>
           ))}
@@ -470,7 +516,7 @@ export const SchoolMapCanvas: React.FC<SchoolMapCanvasProps> = ({
           </AdvancedMarker>
         ))}
 
-        {/* School InfoWindow */}
+        {/* Place InfoWindow */}
         {focusedSchool && (() => {
           const matchedAnchor =
             selectedMarker?.placeId === focusedSchool.placeId
@@ -490,7 +536,13 @@ export const SchoolMapCanvas: React.FC<SchoolMapCanvasProps> = ({
               }}
             >
               <div className="max-w-[250px] p-1 text-slate-900">
-                <div className="font-semibold text-sm leading-snug">
+                <div className="text-[11px] font-medium text-teal-700">
+                  {formatPlaceTypeLabel(
+                    focusedSchool.primaryType,
+                    focusedSchool.primaryTypeDisplayName
+                  )}
+                </div>
+                <div className="font-semibold text-sm leading-snug mt-0.5">
                   {focusedSchool.name}
                 </div>
                 <div className="mt-1 text-xs text-slate-600 leading-snug">
@@ -530,7 +582,7 @@ export const SchoolMapCanvas: React.FC<SchoolMapCanvasProps> = ({
                     ) : (
                       <>
                         <Plus className="w-3.5 h-3.5" />
-                        Add to Tour
+                        Add Stop
                       </>
                     )}
                   </button>
@@ -553,7 +605,7 @@ export const SchoolMapCanvas: React.FC<SchoolMapCanvasProps> = ({
       </GoogleMap>
 
       {/* Top-Right Responsive Map Style, Traffic & GPS Follow Toolbar */}
-      <div className="absolute top-3 right-3 z-20 flex items-center gap-2 max-w-[calc(100%-1.5rem)] justify-end">
+      <div className="absolute top-3 right-3 z-20 flex items-center gap-1.5 sm:gap-2 max-w-[calc(100%-1.5rem)] justify-end">
         {/* Desktop Map Style Segmented Control */}
         <div className="hidden sm:flex items-center gap-0.5 p-1 rounded-lg bg-white/95 dark:bg-slate-900/95 border border-slate-200 dark:border-slate-800 shadow-sm backdrop-blur">
           {MAP_STYLE_OPTIONS.map(item => (
@@ -577,9 +629,9 @@ export const SchoolMapCanvas: React.FC<SchoolMapCanvasProps> = ({
           <button
             type="button"
             onClick={() => setMobileStyleOpen(v => !v)}
-            className="inline-flex items-center justify-center gap-1.5 min-h-[44px] px-3 rounded-lg bg-white/95 dark:bg-slate-900/95 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-800 shadow-sm backdrop-blur text-xs font-medium whitespace-nowrap"
+            className="inline-flex items-center justify-center gap-1 min-h-[40px] px-2.5 rounded-lg bg-white/95 dark:bg-slate-900/95 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-800 shadow-sm backdrop-blur text-xs font-medium whitespace-nowrap"
           >
-            <Palette className="w-4 h-4 text-teal-600" />
+            <Palette className="w-3.5 h-3.5 text-teal-600" />
             <span>{MAP_STYLE_OPTIONS.find(s => s.id === mapStyle)?.label}</span>
           </button>
           {mobileStyleOpen && (
@@ -609,13 +661,13 @@ export const SchoolMapCanvas: React.FC<SchoolMapCanvasProps> = ({
         <button
           type="button"
           onClick={onToggleTraffic}
-          className={`inline-flex items-center justify-center gap-1.5 min-h-[44px] sm:min-h-0 px-3 py-2 sm:py-1.5 rounded-lg text-xs font-medium border shadow-sm transition-colors whitespace-nowrap shrink-0 backdrop-blur ${
+          className={`inline-flex items-center justify-center gap-1 min-h-[40px] sm:min-h-0 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium border shadow-sm transition-colors whitespace-nowrap shrink-0 backdrop-blur ${
             showTraffic
               ? 'bg-teal-600 text-white border-teal-600 hover:bg-teal-700'
               : 'bg-white/95 dark:bg-slate-900/95 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800'
           }`}
         >
-          <Layers className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
+          <Layers className="w-3.5 h-3.5" />
           <span>Traffic</span>
         </button>
 
@@ -624,7 +676,7 @@ export const SchoolMapCanvas: React.FC<SchoolMapCanvasProps> = ({
           onClick={handleRecenter}
           title={isNavigating ? 'Follow live GPS' : 'Recenter map'}
           aria-label={isNavigating ? 'Follow live GPS' : 'Recenter map'}
-          className={`inline-flex items-center justify-center min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 sm:w-8 sm:h-8 rounded-lg border shadow-sm transition-colors backdrop-blur ${
+          className={`inline-flex items-center justify-center min-w-[40px] min-h-[40px] sm:min-w-0 sm:min-h-0 sm:w-8 sm:h-8 rounded-lg border shadow-sm transition-colors backdrop-blur ${
             isNavigating && gpsFollowEnabled
               ? 'bg-sky-600 text-white border-sky-600'
               : 'bg-white/95 dark:bg-slate-900/95 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800'
@@ -640,7 +692,7 @@ export const SchoolMapCanvas: React.FC<SchoolMapCanvasProps> = ({
           <button
             type="button"
             onClick={() => onChangeTravelMode('DRIVING')}
-            className={`inline-flex items-center gap-1.5 min-h-[36px] sm:min-h-0 px-2.5 py-1.5 sm:py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+            className={`inline-flex items-center gap-1 min-h-[34px] sm:min-h-0 px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
               travelMode === 'DRIVING'
                 ? 'bg-teal-600 text-white'
                 : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -652,7 +704,7 @@ export const SchoolMapCanvas: React.FC<SchoolMapCanvasProps> = ({
           <button
             type="button"
             onClick={() => onChangeTravelMode('BICYCLING')}
-            className={`inline-flex items-center gap-1.5 min-h-[36px] sm:min-h-0 px-2.5 py-1.5 sm:py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+            className={`inline-flex items-center gap-1 min-h-[34px] sm:min-h-0 px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
               travelMode === 'BICYCLING'
                 ? 'bg-sky-600 text-white'
                 : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -664,13 +716,13 @@ export const SchoolMapCanvas: React.FC<SchoolMapCanvasProps> = ({
         </div>
       )}
 
-      {/* Mobile Non-Navigating Quick Live Route Launch Card */}
-      {!isNavigating && tourStops.length > 0 && (
+      {/* Optional Mobile Non-Navigating Quick Live Route Launch Card */}
+      {showMobileQuickLaunch && !isNavigating && tourStops.length > 0 && (
         <div className="md:hidden absolute bottom-3 left-3 right-3 z-20 rounded-xl bg-white/95 dark:bg-slate-900/95 border border-slate-200 dark:border-slate-800 shadow-lg backdrop-blur p-3">
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
               <div className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                {displayedStops.length} school{displayedStops.length > 1 ? 's' : ''} ·{' '}
+                {displayedStops.length} stop{displayedStops.length > 1 ? 's' : ''} ·{' '}
                 {modeLabel} route
               </div>
               {isComputing ? (
@@ -711,7 +763,6 @@ export const SchoolMapCanvas: React.FC<SchoolMapCanvasProps> = ({
       {/* Active Live Car/Bike Turn-by-Turn Navigation HUD */}
       {isNavigating && activeStep && (
         <div className="absolute bottom-3 left-3 right-3 md:bottom-4 md:left-4 md:right-auto md:w-[400px] z-20 rounded-2xl bg-slate-900/95 text-white border border-slate-700/90 shadow-2xl backdrop-blur p-3.5 md:p-4">
-          {/* Live Telemetry & Recalculating Status */}
           <div className="flex items-center justify-between gap-2 pb-2 mb-2 border-b border-slate-800 text-[11px] font-mono tabular-nums text-slate-300">
             <div className="flex items-center gap-2 min-w-0">
               <span className="inline-flex items-center gap-1 text-teal-300 font-semibold">

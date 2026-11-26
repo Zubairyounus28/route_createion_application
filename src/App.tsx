@@ -3,6 +3,8 @@ import {APIProvider} from '@vis.gl/react-google-maps';
 import {onAuthStateChanged, signInWithPopup, signOut, type User} from 'firebase/auth';
 import {
   Bookmark,
+  ChevronDown,
+  ChevronUp,
   Compass,
   ListOrdered,
   LogIn,
@@ -10,6 +12,7 @@ import {
   Map as MapIcon,
   Navigation,
 } from 'lucide-react';
+import {AppFooter} from './components/AppFooter';
 import {OfflineIndicator} from './components/OfflineIndicator';
 import {SchoolMapCanvas} from './components/SchoolMapCanvas';
 import {SidebarDiscover} from './components/SidebarDiscover';
@@ -32,7 +35,9 @@ import {
 import {
   distanceToPolylineMeters,
   haversineMeters,
+  metersToMilesText,
   metersToTurnCue,
+  millisToDurationText,
 } from './lib/formatters';
 import {
   clearOfflineCache,
@@ -53,12 +58,13 @@ import type {
   SchoolLevelFilter,
   SchoolPlace,
   SyncedSchoolTour,
+  TargetCategory,
   TourStop,
   TravelModeOption,
 } from './types/navigation';
 
 type SidebarTab = 'discover' | 'tour' | 'navigation' | 'saved';
-type MobileView = 'map' | SidebarTab;
+type SheetSnap = 'peek' | 'half' | 'full';
 
 const MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
 
@@ -76,7 +82,7 @@ function CampusRouteWorkspace({
 }) {
   const isOnline = useOnlineStatus();
   const [activeTab, setActiveTab] = useState<SidebarTab>('discover');
-  const [mobileView, setMobileView] = useState<MobileView>('discover');
+  const [sheetSnap, setSheetSnap] = useState<SheetSnap>('half');
 
   // Auth & Sync state
   const [user, setUser] = useState<User | null>(null);
@@ -86,7 +92,7 @@ function CampusRouteWorkspace({
     getOfflineTours()
   );
 
-  // Origin & Discovery Filters
+  // Origin & Multi-Target Discovery Filters
   const [origin, setOrigin] = useState<OriginPoint>(() => {
     const last = loadLastActiveSession();
     if (last) {
@@ -103,7 +109,10 @@ function CampusRouteWorkspace({
     const last = loadLastActiveSession();
     return last?.radiusMiles ?? 5;
   });
+  const [targetCategory, setTargetCategory] =
+    useState<TargetCategory>('all_targets');
   const [levelFilter, setLevelFilter] = useState<SchoolLevelFilter>('all');
+  const [searchQuery, setSearchQuery] = useState<string>('');
   const [focusedSchoolId, setFocusedSchoolId] = useState<string | null>(null);
 
   // Tour Planning State
@@ -129,7 +138,7 @@ function CampusRouteWorkspace({
   });
   const [tourTitle, setTourTitle] = useState<string>(() => {
     const last = loadLastActiveSession();
-    return last?.title ?? 'School Tour Route';
+    return last?.title ?? 'Multi-Stop Route';
   });
   const [activeTourId, setActiveTourId] = useState<string | null>(null);
   const [isSavingTour, setIsSavingTour] = useState(false);
@@ -152,6 +161,7 @@ function CampusRouteWorkspace({
   const offRouteTicksRef = useRef<number>(0);
   const lastRerouteAtRef = useRef<number>(0);
   const pendingLiveStartRef = useRef<boolean>(false);
+  const touchStartYRef = useRef<number | null>(null);
 
   // Google Maps Hooks
   const {
@@ -168,6 +178,7 @@ function CampusRouteWorkspace({
     sdkRoute,
     isComputing,
     routeError,
+    distantStops,
     recompute,
   } = useMultiStopRoute({
     origin,
@@ -279,7 +290,7 @@ function CampusRouteWorkspace({
     return () => unsub();
   }, []);
 
-  // Firestore real-time tours listener (only when auth is ready & user signed in)
+  // Firestore real-time tours listener
   useEffect(() => {
     if (!authReady || !user) return;
     const unsub = subscribeUserTours(
@@ -290,15 +301,31 @@ function CampusRouteWorkspace({
     return () => unsub();
   }, [authReady, user]);
 
-  // Search schools automatically when online and origin/radius/level changes (skip re-searching schools during active rerouting)
+  // Search nearby / text targets automatically when parameters change (debounced for text input)
   useEffect(() => {
     if (!isOnline || isRerouting) return;
-    void searchNearbySchools(
-      {lat: origin.lat, lng: origin.lng},
-      radiusMiles,
-      levelFilter
-    );
-  }, [isOnline, isRerouting, origin.lat, origin.lng, radiusMiles, levelFilter, searchNearbySchools]);
+    const delay = searchQuery.trim().length >= 2 ? 360 : 0;
+    const timer = window.setTimeout(() => {
+      void searchNearbySchools(
+        {lat: origin.lat, lng: origin.lng},
+        radiusMiles,
+        levelFilter,
+        targetCategory,
+        searchQuery
+      );
+    }, delay);
+    return () => window.clearTimeout(timer);
+  }, [
+    isOnline,
+    isRerouting,
+    origin.lat,
+    origin.lng,
+    radiusMiles,
+    levelFilter,
+    targetCategory,
+    searchQuery,
+    searchNearbySchools,
+  ]);
 
   // Request user's current GPS position
   const handleUseCurrentLocation = useCallback(() => {
@@ -326,7 +353,7 @@ function CampusRouteWorkspace({
     );
   }, []);
 
-  // Attempt initial GPS lock once on mount if permitted
+  // Attempt initial GPS lock once on mount if no prior saved session
   useEffect(() => {
     if (!loadLastActiveSession() && 'geolocation' in navigator) {
       navigator.geolocation.getCurrentPosition(
@@ -438,7 +465,6 @@ function CampusRouteWorkspace({
           updatedAt: Date.now(),
         });
 
-        // Approach announcement once per step before reaching the turn
         if (
           currentStep &&
           distToTurn !== null &&
@@ -456,7 +482,6 @@ function CampusRouteWorkspace({
           }
         }
 
-        // Advance when reaching end of active step, or if rider/driver moved onto a subsequent step
         let advanced = false;
         if (distToTurn !== null && distToTurn <= advanceThreshold) {
           advanced = true;
@@ -470,17 +495,23 @@ function CampusRouteWorkspace({
               );
             }
           } else {
-            voice.speak('You have arrived at your final school stop.');
+            voice.speak('You have arrived at your final stop.');
           }
-        } else if (activeStepIndex < allSteps.length - 1 && distToTurn !== null && distToTurn > 80) {
-          // Look ahead up to 3 steps in case a turn was completed between GPS ticks
+        } else if (
+          activeStepIndex < allSteps.length - 1 &&
+          distToTurn !== null &&
+          distToTurn > 80
+        ) {
           for (
             let lookIdx = activeStepIndex + 1;
             lookIdx < Math.min(allSteps.length, activeStepIndex + 4);
             lookIdx++
           ) {
             const candidateEnd = allSteps[lookIdx]?.endLocation;
-            if (candidateEnd && haversineMeters(currentPos, candidateEnd) < advanceThreshold) {
+            if (
+              candidateEnd &&
+              haversineMeters(currentPos, candidateEnd) < advanceThreshold
+            ) {
               advanced = true;
               setActiveStepIndex(lookIdx);
               const nextStep = allSteps[lookIdx];
@@ -497,7 +528,6 @@ function CampusRouteWorkspace({
           return;
         }
 
-        // Automatic live off-route rerouting for Car & Bike
         if (
           gpsFollowEnabled &&
           isOnline &&
@@ -587,6 +617,11 @@ function CampusRouteWorkspace({
     setTourStops(prev => prev.filter(s => s.placeId !== placeId));
   }, []);
 
+  const handleRemoveDistantStops = useCallback(() => {
+    const distantIds = new Set(distantStops.map(d => d.placeId));
+    setTourStops(prev => prev.filter(s => !distantIds.has(s.placeId)));
+  }, [distantStops]);
+
   const handleChangeMapStyle = useCallback(
     (style: MapStyleId) => {
       setMapStyle(style);
@@ -631,7 +666,7 @@ function CampusRouteWorkspace({
       setGpsFollowEnabled(true);
       setIsNavigating(true);
       setActiveTab('navigation');
-      setMobileView('map');
+      setSheetSnap('peek');
       const first = stepsToSpeak[0];
       if (first) {
         const modeWord =
@@ -639,7 +674,7 @@ function CampusRouteWorkspace({
             ? 'bike'
             : travelMode === 'DRIVING'
               ? 'car'
-              : 'tour';
+              : 'route';
         voice.speak(
           `Starting live ${modeWord} navigation. ${first.instruction}. For ${first.distanceText}.`,
           true
@@ -653,7 +688,6 @@ function CampusRouteWorkspace({
     beginNavigationSession(allSteps);
   }, [allSteps, beginNavigationSession]);
 
-  // Snap origin to live GPS when user taps "Start Live Car/Bike" / "Go Live"
   const handleStartLiveGpsNavigation = useCallback(() => {
     if (!origin.isCurrentLocation && isOnline && 'geolocation' in navigator) {
       pendingLiveStartRef.current = true;
@@ -685,7 +719,6 @@ function CampusRouteWorkspace({
     beginNavigationSession(allSteps);
   }, [origin.isCurrentLocation, isOnline, allSteps, beginNavigationSession]);
 
-  // Complete deferred live GPS start once the GPS-snapped route computes
   useEffect(() => {
     if (pendingLiveStartRef.current && !isComputing && allSteps.length > 0) {
       pendingLiveStartRef.current = false;
@@ -703,7 +736,7 @@ function CampusRouteWorkspace({
   const handleSelectStep = useCallback((index: number) => {
     setActiveStepIndex(index);
     setIsNavigating(true);
-    setMobileView('map');
+    setSheetSnap('peek');
   }, []);
 
   const handleSaveTour = useCallback(async () => {
@@ -713,7 +746,7 @@ function CampusRouteWorkspace({
 
     const nextOffline = saveOfflineTour({
       id: localId,
-      title: tourTitle.trim() || 'School Tour',
+      title: tourTitle.trim() || 'Multi-Stop Route',
       originName: origin.name,
       originLat: origin.lat,
       originLng: origin.lng,
@@ -734,7 +767,7 @@ function CampusRouteWorkspace({
       if (user && isOnline) {
         const savedId = await saveSyncedTour(user.uid, {
           id: localId,
-          title: tourTitle.trim() || 'School Tour',
+          title: tourTitle.trim() || 'Multi-Stop Route',
           originName: origin.name,
           originLat: origin.lat,
           originLng: origin.lng,
@@ -791,7 +824,7 @@ function CampusRouteWorkspace({
     setTourStops(tour.stops);
     setIsNavigating(false);
     setActiveTab('tour');
-    setMobileView('tour');
+    setSheetSnap('half');
   }, []);
 
   const handleLoadOfflineTour = useCallback(
@@ -814,7 +847,7 @@ function CampusRouteWorkspace({
       }
       setIsNavigating(false);
       setActiveTab('tour');
-      setMobileView('tour');
+      setSheetSnap('half');
     },
     [setComputedRoute]
   );
@@ -830,6 +863,162 @@ function CampusRouteWorkspace({
   const handleSignOut = useCallback(async () => {
     await signOut(auth);
   }, []);
+
+  // Touch swipe handlers for Mobile Bottom Sheet handle
+  const handleSheetTouchStart = (e: React.TouchEvent) => {
+    touchStartYRef.current = e.touches[0].clientY;
+  };
+
+  const handleSheetTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartYRef.current === null) return;
+    const deltaY = e.changedTouches[0].clientY - touchStartYRef.current;
+    touchStartYRef.current = null;
+    if (deltaY < -36) {
+      setSheetSnap(prev => (prev === 'peek' ? 'half' : 'full'));
+    } else if (deltaY > 36) {
+      setSheetSnap(prev => (prev === 'full' ? 'half' : 'peek'));
+    }
+  };
+
+  const cycleSheetSnap = () => {
+    setSheetSnap(prev =>
+      prev === 'peek' ? 'half' : prev === 'half' ? 'full' : 'peek'
+    );
+  };
+
+  const activeTabContent = (
+    <>
+      {activeTab === 'discover' && (
+        <SidebarDiscover
+          origin={origin}
+          onSelectOrigin={next => {
+            setOrigin(next);
+            setFocusedSchoolId(null);
+          }}
+          onUseCurrentLocation={handleUseCurrentLocation}
+          isLocating={isLocating}
+          radiusMiles={radiusMiles}
+          onChangeRadius={handleChangeRadius}
+          targetCategory={targetCategory}
+          onChangeTargetCategory={setTargetCategory}
+          levelFilter={levelFilter}
+          onChangeLevelFilter={setLevelFilter}
+          searchQuery={searchQuery}
+          onChangeSearchQuery={setSearchQuery}
+          schools={schools}
+          isSearching={isSearching}
+          searchError={searchError}
+          onRefreshSearch={() =>
+            void searchNearbySchools(
+              {lat: origin.lat, lng: origin.lng},
+              radiusMiles,
+              levelFilter,
+              targetCategory,
+              searchQuery
+            )
+          }
+          tourStops={tourStops}
+          onToggleStop={handleToggleStop}
+          focusedSchoolId={focusedSchoolId}
+          onFocusSchool={id => {
+            setFocusedSchoolId(id);
+            if (sheetSnap === 'full') {
+              setSheetSnap('half');
+            }
+          }}
+          onOpenTour={() => {
+            setActiveTab('tour');
+            setSheetSnap('half');
+          }}
+          isOnline={isOnline}
+        />
+      )}
+
+      {activeTab === 'tour' && (
+        <SidebarTour
+          origin={origin}
+          stops={tourStops}
+          computedRoute={computedRoute}
+          isComputing={isComputing}
+          routeError={routeError}
+          distantStopsCount={distantStops.length}
+          onRemoveDistantStops={handleRemoveDistantStops}
+          travelMode={travelMode}
+          onChangeTravelMode={handleChangeTravelMode}
+          routeObjective={routeObjective}
+          onChangeRouteObjective={setRouteObjective}
+          optimizeOrder={optimizeOrder}
+          onToggleOptimizeOrder={() => setOptimizeOrder(v => !v)}
+          roundTrip={roundTrip}
+          onToggleRoundTrip={() => setRoundTrip(v => !v)}
+          onMoveStop={handleMoveStop}
+          onRemoveStop={handleRemoveStop}
+          onClearStops={() => {
+            setTourStops([]);
+            setIsNavigating(false);
+          }}
+          onRefreshTraffic={recompute}
+          onStartNavigation={handleStartNavigation}
+          onStartLiveGpsNavigation={handleStartLiveGpsNavigation}
+          tourTitle={tourTitle}
+          onChangeTourTitle={setTourTitle}
+          onSaveTour={handleSaveTour}
+          isSavingTour={isSavingTour}
+          saveFeedback={saveFeedback}
+          isSignedIn={Boolean(user)}
+          isOnline={isOnline}
+        />
+      )}
+
+      {activeTab === 'navigation' && (
+        <SidebarNavigation
+          computedRoute={computedRoute}
+          travelMode={travelMode}
+          onChangeTravelMode={handleChangeTravelMode}
+          isNavigating={isNavigating}
+          onStartNavigation={handleStartLiveGpsNavigation}
+          onStopNavigation={handleStopNavigation}
+          activeStepIndex={activeStepIndex}
+          onSelectStep={handleSelectStep}
+          voiceEnabled={voice.enabled}
+          onToggleVoice={handleToggleVoice}
+          voiceRate={voice.rate}
+          onChangeVoiceRate={voice.setRate}
+          voiceSupported={voice.isSupported}
+          onSpeakStep={step =>
+            voice.speak(`${step.instruction}. ${step.distanceText}.`, true)
+          }
+          gpsFollowEnabled={gpsFollowEnabled}
+          onToggleGpsFollow={() => setGpsFollowEnabled(v => !v)}
+        />
+      )}
+
+      {activeTab === 'saved' && (
+        <SidebarSaved
+          isSignedIn={Boolean(user)}
+          userEmail={user?.email || null}
+          onSignIn={() => void handleSignIn()}
+          syncedTours={syncedTours}
+          onLoadSyncedTour={handleLoadSyncedTour}
+          onDeleteSyncedTour={tourId => {
+            if (user) {
+              void deleteSyncedTour(user.uid, tourId);
+            }
+          }}
+          offlineTours={offlineTours}
+          onLoadOfflineTour={handleLoadOfflineTour}
+          onRemoveOfflineTour={id => setOfflineTours(removeOfflineTour(id))}
+          onClearOfflineCache={() => {
+            clearOfflineCache();
+            setOfflineTours([]);
+          }}
+          isOnline={isOnline}
+        />
+      )}
+    </>
+  );
+
+  const showMobileSheet = !(isNavigating && sheetSnap === 'peek');
 
   return (
     <div className="flex flex-col h-[100dvh] w-full overflow-hidden bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100">
@@ -853,15 +1042,13 @@ function CampusRouteWorkspace({
 
       {/* Three-Zone Top Bar Contract */}
       <header className="h-12 md:h-14 shrink-0 px-4 md:px-6 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 flex items-center justify-between gap-4 md:gap-8">
-        {/* Zone 1: Single-line brand wordmark */}
         <a
           href="/"
           className="font-display text-base md:text-lg font-bold tracking-tight text-slate-900 dark:text-white whitespace-nowrap shrink-0"
         >
-          CampusRoute
+          Route Creator
         </a>
 
-        {/* Zone 2: 4 concise single-line navigation links (Desktop) */}
         <nav
           aria-label="Workspace sections"
           className="hidden md:flex items-center gap-6 text-sm font-medium"
@@ -871,7 +1058,7 @@ function CampusRouteWorkspace({
               {id: 'discover', label: 'Discover'},
               {id: 'tour', label: `Tour Stops (${tourStops.length})`},
               {id: 'navigation', label: 'Turn-by-Turn'},
-              {id: 'saved', label: 'Saved Tours'},
+              {id: 'saved', label: 'Saved Routes'},
             ] as {id: SidebarTab; label: string}[]
           ).map(item => (
             <button
@@ -889,7 +1076,6 @@ function CampusRouteWorkspace({
           ))}
         </nav>
 
-        {/* Zone 3: 1 primary action */}
         <div className="flex items-center shrink-0">
           {user ? (
             <button
@@ -916,136 +1102,15 @@ function CampusRouteWorkspace({
         </div>
       </header>
 
-      {/* Main Split Workspace (Desktop split / Mobile single-pane switcher with persistent mounted map) */}
-      <main className="flex-1 flex flex-col md:flex-row min-h-0 overflow-hidden">
-        {/* Left Sidebar Planner (Full-pane on mobile when a planner tab is selected) */}
-        <aside
-          className={`${
-            mobileView === 'map' ? 'hidden md:flex' : 'flex flex-1 md:flex-initial'
-          } w-full md:w-[410px] lg:w-[430px] h-full shrink-0 md:border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 flex-col min-h-0`}
-        >
-          {activeTab === 'discover' && (
-            <SidebarDiscover
-              origin={origin}
-              onSelectOrigin={next => {
-                setOrigin(next);
-                setFocusedSchoolId(null);
-              }}
-              onUseCurrentLocation={handleUseCurrentLocation}
-              isLocating={isLocating}
-              radiusMiles={radiusMiles}
-              onChangeRadius={handleChangeRadius}
-              levelFilter={levelFilter}
-              onChangeLevelFilter={setLevelFilter}
-              schools={schools}
-              isSearching={isSearching}
-              searchError={searchError}
-              onRefreshSearch={() =>
-                void searchNearbySchools(
-                  {lat: origin.lat, lng: origin.lng},
-                  radiusMiles,
-                  levelFilter
-                )
-              }
-              tourStops={tourStops}
-              onToggleStop={handleToggleStop}
-              focusedSchoolId={focusedSchoolId}
-              onFocusSchool={id => {
-                setFocusedSchoolId(id);
-              }}
-              isOnline={isOnline}
-            />
-          )}
-
-          {activeTab === 'tour' && (
-            <SidebarTour
-              origin={origin}
-              stops={tourStops}
-              computedRoute={computedRoute}
-              isComputing={isComputing}
-              routeError={routeError}
-              travelMode={travelMode}
-              onChangeTravelMode={handleChangeTravelMode}
-              routeObjective={routeObjective}
-              onChangeRouteObjective={setRouteObjective}
-              optimizeOrder={optimizeOrder}
-              onToggleOptimizeOrder={() => setOptimizeOrder(v => !v)}
-              roundTrip={roundTrip}
-              onToggleRoundTrip={() => setRoundTrip(v => !v)}
-              onMoveStop={handleMoveStop}
-              onRemoveStop={handleRemoveStop}
-              onClearStops={() => {
-                setTourStops([]);
-                setIsNavigating(false);
-              }}
-              onRefreshTraffic={recompute}
-              onStartNavigation={handleStartNavigation}
-              onStartLiveGpsNavigation={handleStartLiveGpsNavigation}
-              tourTitle={tourTitle}
-              onChangeTourTitle={setTourTitle}
-              onSaveTour={handleSaveTour}
-              isSavingTour={isSavingTour}
-              saveFeedback={saveFeedback}
-              isSignedIn={Boolean(user)}
-              isOnline={isOnline}
-            />
-          )}
-
-          {activeTab === 'navigation' && (
-            <SidebarNavigation
-              computedRoute={computedRoute}
-              travelMode={travelMode}
-              onChangeTravelMode={handleChangeTravelMode}
-              isNavigating={isNavigating}
-              onStartNavigation={handleStartLiveGpsNavigation}
-              onStopNavigation={handleStopNavigation}
-              activeStepIndex={activeStepIndex}
-              onSelectStep={handleSelectStep}
-              voiceEnabled={voice.enabled}
-              onToggleVoice={handleToggleVoice}
-              voiceRate={voice.rate}
-              onChangeVoiceRate={voice.setRate}
-              voiceSupported={voice.isSupported}
-              onSpeakStep={step =>
-                voice.speak(`${step.instruction}. ${step.distanceText}.`, true)
-              }
-              gpsFollowEnabled={gpsFollowEnabled}
-              onToggleGpsFollow={() => setGpsFollowEnabled(v => !v)}
-            />
-          )}
-
-          {activeTab === 'saved' && (
-            <SidebarSaved
-              isSignedIn={Boolean(user)}
-              userEmail={user?.email || null}
-              onSignIn={() => void handleSignIn()}
-              syncedTours={syncedTours}
-              onLoadSyncedTour={handleLoadSyncedTour}
-              onDeleteSyncedTour={tourId => {
-                if (user) {
-                  void deleteSyncedTour(user.uid, tourId);
-                }
-              }}
-              offlineTours={offlineTours}
-              onLoadOfflineTour={handleLoadOfflineTour}
-              onRemoveOfflineTour={id => setOfflineTours(removeOfflineTour(id))}
-              onClearOfflineCache={() => {
-                clearOfflineCache();
-                setOfflineTours([]);
-              }}
-              isOnline={isOnline}
-            />
-          )}
+      {/* Main Split Workspace: Always-Visible Map + Desktop Sidebar + Mobile Interactive Bottom Sheet */}
+      <main className="flex-1 relative flex flex-col md:flex-row min-h-0 overflow-hidden">
+        {/* Desktop Sidebar */}
+        <aside className="hidden md:flex w-[410px] lg:w-[430px] h-full shrink-0 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 flex-col min-h-0">
+          {activeTabContent}
         </aside>
 
-        {/* Right Interactive Google Map Viewport (Kept mounted so switching mobile tabs is instant) */}
-        <section
-          className={`${
-            mobileView === 'map'
-              ? 'flex-1 h-full relative'
-              : 'hidden md:block md:flex-1 md:h-full relative'
-          }`}
-        >
+        {/* Persistent Full-Height Interactive Map Viewport */}
+        <section className="flex-1 h-full relative min-h-0">
           <SchoolMapCanvas
             origin={origin}
             radiusMiles={radiusMiles}
@@ -1103,9 +1168,106 @@ function CampusRouteWorkspace({
             onDisableGpsFollow={() => setGpsFollowEnabled(false)}
             isRerouting={isRerouting}
             isComputing={isComputing}
-            isVisibleOnMobile={mobileView === 'map'}
+            isVisibleOnMobile={sheetSnap === 'peek' || sheetSnap === 'half'}
+            showMobileQuickLaunch={false}
           />
         </section>
+
+        {/* Mobile Resizable Bottom Sheet over Live Map */}
+        {showMobileSheet && (
+          <div
+            className={`md:hidden absolute left-0 right-0 bottom-0 z-20 flex flex-col rounded-t-3xl bg-white/97 dark:bg-slate-950/97 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 shadow-[0_-10px_32px_rgba(15,23,42,0.14)] overflow-hidden ${
+              sheetSnap === 'full'
+                ? 'h-[92%]'
+                : sheetSnap === 'half'
+                  ? 'h-[56%]'
+                  : 'h-auto'
+            }`}
+          >
+            {/* Drag Handle + Quick Summary Header */}
+            <div
+              onTouchStart={handleSheetTouchStart}
+              onTouchEnd={handleSheetTouchEnd}
+              className="shrink-0 border-b border-slate-100 dark:border-slate-800/80 select-none"
+            >
+              <button
+                type="button"
+                onClick={cycleSheetSnap}
+                aria-label="Resize panel"
+                className="w-full pt-2 pb-1 flex justify-center"
+              >
+                <span className="w-10 h-1.5 rounded-full bg-slate-300 dark:bg-slate-700" />
+              </button>
+
+              <div className="px-4 pb-2.5 flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSheetSnap(prev => (prev === 'peek' ? 'half' : 'peek'))
+                  }
+                  className="text-left min-w-0 flex-1 py-0.5"
+                >
+                  {tourStops.length > 0 && computedRoute ? (
+                    <div className="flex items-center gap-2 text-xs font-semibold text-slate-900 dark:text-white truncate">
+                      <span>
+                        {tourStops.length} stop{tourStops.length > 1 ? 's' : ''}
+                      </span>
+                      <span aria-hidden="true">·</span>
+                      <span className="font-mono tabular-nums text-teal-700 dark:text-teal-400">
+                        {millisToDurationText(computedRoute.totalDurationMillis)} ·{' '}
+                        {metersToMilesText(computedRoute.totalDistanceMeters)}
+                      </span>
+                    </div>
+                  ) : tourStops.length > 0 ? (
+                    <div className="text-xs font-semibold text-slate-900 dark:text-white truncate">
+                      {tourStops.length} stop{tourStops.length > 1 ? 's' : ''} selected
+                      {isComputing ? ' · Routing...' : routeError ? ' · Needs review' : ''}
+                    </div>
+                  ) : (
+                    <div className="text-xs font-semibold text-slate-900 dark:text-white truncate">
+                      {schools.length} nearby places · {origin.name}
+                    </div>
+                  )}
+                </button>
+
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {tourStops.length > 0 && computedRoute && !isNavigating && (
+                    <button
+                      type="button"
+                      onClick={handleStartLiveGpsNavigation}
+                      className="inline-flex items-center gap-1 min-h-[36px] px-3 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold whitespace-nowrap"
+                    >
+                      <Navigation className="w-3.5 h-3.5" />
+                      Go Live
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={cycleSheetSnap}
+                    aria-label={
+                      sheetSnap === 'full' ? 'Collapse sheet' : 'Expand sheet'
+                    }
+                    className="inline-flex items-center justify-center min-w-[36px] min-h-[36px] rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
+                  >
+                    {sheetSnap === 'full' ? (
+                      <ChevronDown className="w-4 h-4" />
+                    ) : (
+                      <ChevronUp className="w-4 h-4" />
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Sheet Body (Hidden cleanly when in Peek state) */}
+            {sheetSnap !== 'peek' && (
+              <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+                {activeTabContent}
+              </div>
+            )}
+          </div>
+        )}
       </main>
 
       {/* Mobile Bottom Thumb-Zone Navigation Bar */}
@@ -1126,21 +1288,28 @@ function CampusRouteWorkspace({
               {id: 'navigation', label: 'Steps', icon: Navigation},
               {id: 'saved', label: 'Saved', icon: Bookmark},
             ] as {
-              id: MobileView;
+              id: 'map' | SidebarTab;
               label: string;
               icon: React.ComponentType<{className?: string}>;
             }[]
           ).map(item => {
             const Icon = item.icon;
-            const isActive = mobileView === item.id;
+            const isActive =
+              item.id === 'map'
+                ? sheetSnap === 'peek'
+                : sheetSnap !== 'peek' && activeTab === item.id;
             return (
               <button
                 key={item.id}
                 type="button"
                 onClick={() => {
-                  setMobileView(item.id);
-                  if (item.id !== 'map') {
+                  if (item.id === 'map') {
+                    setSheetSnap('peek');
+                  } else {
                     setActiveTab(item.id);
+                    setSheetSnap(prev =>
+                      prev === 'peek' || activeTab !== item.id ? 'half' : prev
+                    );
                   }
                 }}
                 className={`flex flex-col items-center justify-center gap-0.5 min-h-[48px] px-1 transition-colors ${
@@ -1158,6 +1327,8 @@ function CampusRouteWorkspace({
           })}
         </div>
       </nav>
+
+      <AppFooter variant="bar" />
 
       <OfflineIndicator />
     </div>
@@ -1178,7 +1349,7 @@ export default function App() {
       <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6">
         <div className="max-w-md w-full rounded-xl bg-white border border-slate-200 p-6 shadow-sm">
           <h1 className="font-display text-lg font-bold text-slate-900">
-            CampusRoute Setup Required
+            Route Creator Setup Required
           </h1>
           <p className="mt-2 text-sm text-slate-600">
             The Google Maps Platform API key is not configured in{' '}

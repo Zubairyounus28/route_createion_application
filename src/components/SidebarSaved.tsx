@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import {metersToMilesText, millisToDurationText} from '../lib/formatters';
 import type {OfflineCachedTour, SyncedSchoolTour} from '../types/navigation';
+import {AppFooter} from './AppFooter';
 import {PWAInstallButton} from './PWAInstallButton';
 
 interface SidebarSavedProps {
@@ -57,14 +58,14 @@ export const SidebarSaved: React.FC<SidebarSavedProps> = ({
                 Synced as {userEmail || 'Signed-in account'}
               </div>
               <div className="text-slate-500 dark:text-slate-400 mt-0.5">
-                Your school tours update automatically across all devices.
+                Your multi-stop routes update automatically across all devices.
               </div>
             </div>
           </div>
         ) : (
           <div className="p-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 space-y-2.5">
             <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-              Sign in with Google to sync your saved multi-stop school tours across desktop, tablet, and mobile.
+              Sign in with Google to sync your saved multi-stop routes across desktop, tablet, and mobile.
             </p>
             <button
               type="button"
@@ -84,13 +85,13 @@ export const SidebarSaved: React.FC<SidebarSavedProps> = ({
         <div className="p-4 space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-              Synced School Tours ({syncedTours.length})
+              Synced Routes ({syncedTours.length})
             </h3>
           </div>
 
           {syncedTours.length === 0 ? (
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              No synced tours yet. Save a multi-stop route from the Tour Stops tab.
+              No synced routes yet. Save a multi-stop route from the Tour tab.
             </p>
           ) : (
             <ul className="divide-y divide-slate-200 dark:divide-slate-800 border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden">
@@ -146,7 +147,7 @@ export const SidebarSaved: React.FC<SidebarSavedProps> = ({
           <div className="flex items-center gap-1.5">
             <HardDrive className="w-3.5 h-3.5 text-slate-500" />
             <h3 className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-              Offline Cached Tours ({offlineTours.length})
+              Offline Cached Routes ({offlineTours.length})
             </h3>
           </div>
           {offlineTours.length > 0 && (
@@ -162,7 +163,7 @@ export const SidebarSaved: React.FC<SidebarSavedProps> = ({
 
         {offlineTours.length === 0 ? (
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            Computed routes and school stops are cached locally on this device so you can navigate even without signal.
+            Computed routes and stops are cached locally on this device so you can navigate even without signal.
           </p>
         ) : (
           <ul className="divide-y divide-slate-200 dark:divide-slate-800 border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden">
@@ -214,6 +215,10 @@ export const SidebarSaved: React.FC<SidebarSavedProps> = ({
             ))}
           </ul>
         )}
+      </div>
+
+      <div className="md:hidden">
+        <AppFooter variant="compact" />
       </div>
     </div>
   );

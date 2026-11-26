@@ -10,6 +10,14 @@ export interface OriginPoint {
   isCurrentLocation?: boolean;
 }
 
+export type TargetCategory =
+  | 'all_targets'
+  | 'schools'
+  | 'book_store'
+  | 'library'
+  | 'cafe'
+  | 'supplies';
+
 export type SchoolLevelFilter =
   | 'all'
   | 'preschool'

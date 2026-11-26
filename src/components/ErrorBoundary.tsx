@@ -40,7 +40,7 @@ export class ErrorBoundary extends Component<Props, State> {
               Something went wrong
             </h2>
             <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
-              CampusRoute encountered an unexpected issue while syncing or rendering navigation data.
+              Route Creator encountered an unexpected issue while syncing or rendering navigation data.
             </p>
             <div className="mt-4 p-3 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-mono text-slate-700 dark:text-slate-300 break-words max-h-36 overflow-auto">
               {this.state.errorMessage}
@@ -50,7 +50,7 @@ export class ErrorBoundary extends Component<Props, State> {
               onClick={this.handleReset}
               className="mt-5 w-full px-4 py-2.5 text-sm font-medium text-white bg-teal-600 hover:bg-teal-700 rounded-lg transition-colors"
             >
-              Reload CampusRoute
+              Reload Route Creator
             </button>
           </div>
         </div>

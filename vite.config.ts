@@ -15,10 +15,10 @@ export default defineConfig(() => {
         includeAssets: ['icon.svg', 'apple-touch-icon.png', 'pwa-192x192.png', 'pwa-512x512.png'],
         manifest: {
           id: '/',
-          name: 'CampusRoute — School Tour Navigator',
-          short_name: 'CampusRoute',
+          name: 'Route Creator — Smart Multi-Stop Navigator',
+          short_name: 'Route Creator',
           description:
-            'Discover nearby schools within 5 miles, optimize multi-stop tour routes with live traffic, and navigate offline with voice guidance.',
+            'Discover schools, bookstores, libraries, and more within 5 miles, optimize multi-stop routes with live traffic, and navigate offline with voice guidance.',
           theme_color: '#0F172A',
           background_color: '#0F172A',
           display: 'standalone',

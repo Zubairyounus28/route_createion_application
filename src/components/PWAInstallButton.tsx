@@ -39,7 +39,7 @@ export const PWAInstallButton: React.FC = () => {
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
             <div className="w-full max-w-sm rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-xl">
               <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-                Install CampusRoute on iPhone or iPad
+                Install Route Creator on iPhone or iPad
               </h3>
               <p className="mt-2 text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
                 1. Tap the <strong>Share</strong> button in the Safari toolbar.

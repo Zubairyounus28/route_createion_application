@@ -158,8 +158,10 @@ export const AreaSearchInput: React.FC<AreaSearchInputProps> = ({
           <span className="truncate font-medium text-slate-800 dark:text-slate-200">
             {origin.name}
           </span>
-          <span aria-hidden="true">·</span>
-          <span className="font-mono text-[11px] shrink-0">
+          <span aria-hidden="true" className="hidden sm:inline">
+            ·
+          </span>
+          <span className="hidden sm:inline font-mono text-[11px] shrink-0">
             {origin.lat.toFixed(4)}, {origin.lng.toFixed(4)}
           </span>
         </div>

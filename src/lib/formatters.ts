@@ -109,3 +109,32 @@ export function metersToTurnCue(meters: number): string {
   }
   return `in ${(meters / 1609.344).toFixed(1)} mi`;
 }
+
+export function formatPlaceTypeLabel(
+  primaryType?: string,
+  primaryTypeDisplayName?: string
+): string {
+  if (primaryTypeDisplayName && primaryTypeDisplayName.trim()) {
+    return primaryTypeDisplayName.trim();
+  }
+  if (!primaryType) return 'Place';
+  const map: Record<string, string> = {
+    school: 'School',
+    primary_school: 'Primary School',
+    secondary_school: 'Secondary School',
+    preschool: 'Preschool',
+    university: 'College / University',
+    book_store: 'Bookstore',
+    library: 'Library',
+    cafe: 'Study Cafe',
+    coffee_shop: 'Coffee Shop',
+    store: 'Store',
+    department_store: 'Supplies Store',
+    electronics_store: 'Electronics',
+  };
+  if (map[primaryType]) return map[primaryType];
+  return primaryType
+    .split('_')
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}

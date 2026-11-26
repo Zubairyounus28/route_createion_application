@@ -13,9 +13,14 @@ import {
   RefreshCw,
   RotateCcw,
   Save,
+  SlidersHorizontal,
   Trash2,
 } from 'lucide-react';
-import {metersToMilesText, millisToDurationText} from '../lib/formatters';
+import {
+  formatPlaceTypeLabel,
+  metersToMilesText,
+  millisToDurationText,
+} from '../lib/formatters';
 import type {
   ComputedTourRoute,
   OriginPoint,
@@ -30,6 +35,8 @@ interface SidebarTourProps {
   computedRoute: ComputedTourRoute | null;
   isComputing: boolean;
   routeError: string | null;
+  distantStopsCount: number;
+  onRemoveDistantStops: () => void;
   travelMode: TravelModeOption;
   onChangeTravelMode: (mode: TravelModeOption) => void;
   routeObjective: RouteObjective;
@@ -59,6 +66,8 @@ export const SidebarTour: React.FC<SidebarTourProps> = ({
   computedRoute,
   isComputing,
   routeError,
+  distantStopsCount,
+  onRemoveDistantStops,
   travelMode,
   onChangeTravelMode,
   routeObjective,
@@ -82,105 +91,113 @@ export const SidebarTour: React.FC<SidebarTourProps> = ({
   isOnline,
 }) => {
   const [confirmClear, setConfirmClear] = useState(false);
+  const [showRouteOptions, setShowRouteOptions] = useState(false);
 
   const displayedStops =
     computedRoute?.orderedStops.length ? computedRoute.orderedStops : stops;
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="p-4 border-b border-slate-200 dark:border-slate-800 space-y-4">
+    <div className="flex flex-col h-full min-h-0">
+      <div className="p-3 sm:p-4 border-b border-slate-200 dark:border-slate-800 space-y-3 shrink-0">
         {/* Travel Mode Selector */}
-        <div className="space-y-1.5">
-          <span className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-            Travel Mode
-          </span>
-          <div className="grid grid-cols-4 gap-1 p-1 rounded-lg bg-slate-100 dark:bg-slate-800/80">
-            {(
-              [
-                {id: 'DRIVING', label: 'Car', icon: Car},
-                {id: 'BICYCLING', label: 'Bike', icon: Bike},
-                {id: 'WALKING', label: 'Walk', icon: Footprints},
-                {id: 'TRANSIT', label: 'Transit', icon: Bus},
-              ] as {
-                id: TravelModeOption;
-                label: string;
-                icon: React.ComponentType<{className?: string}>;
-              }[]
-            ).map(item => {
-              const Icon = item.icon;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => onChangeTravelMode(item.id)}
-                  className={`inline-flex items-center justify-center gap-1 min-h-[42px] md:min-h-0 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
-                    travelMode === item.id
-                      ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                  }`}
-                >
-                  <Icon className="w-3.5 h-3.5" />
-                  {item.label}
-                </button>
-              );
-            })}
-          </div>
+        <div className="grid grid-cols-4 gap-1 p-1 rounded-lg bg-slate-100 dark:bg-slate-800/80">
+          {(
+            [
+              {id: 'DRIVING', label: 'Car', icon: Car},
+              {id: 'BICYCLING', label: 'Bike', icon: Bike},
+              {id: 'WALKING', label: 'Walk', icon: Footprints},
+              {id: 'TRANSIT', label: 'Transit', icon: Bus},
+            ] as {
+              id: TravelModeOption;
+              label: string;
+              icon: React.ComponentType<{className?: string}>;
+            }[]
+          ).map(item => {
+            const Icon = item.icon;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => onChangeTravelMode(item.id)}
+                className={`inline-flex items-center justify-center gap-1 min-h-[40px] md:min-h-0 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
+                  travelMode === item.id
+                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5" />
+                {item.label}
+              </button>
+            );
+          })}
         </div>
 
-        {/* Route Objective */}
-        <div className="space-y-1.5">
-          <span className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-            Routing Priority
-          </span>
-          <div className="grid grid-cols-2 gap-1 p-1 rounded-lg bg-slate-100 dark:bg-slate-800/80">
+        {/* Route Priority + Collapsible Options Toggle */}
+        <div className="flex items-center gap-2">
+          <div className="flex-1 grid grid-cols-2 gap-1 p-1 rounded-lg bg-slate-100 dark:bg-slate-800/80">
             <button
               type="button"
               onClick={() => onChangeRouteObjective('FASTEST_TRAFFIC')}
-              className={`min-h-[42px] md:min-h-0 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
+              className={`min-h-[38px] md:min-h-0 py-1 text-xs font-medium rounded-md transition-colors whitespace-nowrap truncate px-1.5 ${
                 routeObjective === 'FASTEST_TRAFFIC'
                   ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
-              Fastest · Live Traffic
+              Fastest Traffic
             </button>
             <button
               type="button"
               onClick={() => onChangeRouteObjective('SHORTEST_DISTANCE')}
-              className={`min-h-[42px] md:min-h-0 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
+              className={`min-h-[38px] md:min-h-0 py-1 text-xs font-medium rounded-md transition-colors whitespace-nowrap truncate px-1.5 ${
                 routeObjective === 'SHORTEST_DISTANCE'
                   ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
-              Shortest Distance
+              Shortest Dist
             </button>
           </div>
+
+          <button
+            type="button"
+            onClick={() => setShowRouteOptions(v => !v)}
+            aria-label="Route options"
+            title="Stop optimization & round-trip options"
+            className={`inline-flex items-center justify-center min-w-[40px] min-h-[40px] md:min-w-0 md:min-h-0 md:px-2.5 md:py-1.5 rounded-lg border text-xs font-medium transition-colors ${
+              showRouteOptions
+                ? 'border-teal-600 text-teal-700 dark:text-teal-300 bg-teal-50/70 dark:bg-teal-950/30'
+                : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+            }`}
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5" />
+          </button>
         </div>
 
-        {/* Optimization & Round Trip toggles */}
-        <div className="flex items-center justify-between gap-3 text-xs">
-          <label className="inline-flex items-center gap-2 text-slate-700 dark:text-slate-300 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={optimizeOrder}
-              disabled={travelMode === 'TRANSIT'}
-              onChange={onToggleOptimizeOrder}
-              className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
-            />
-            Auto-optimize stop order
-          </label>
+        {showRouteOptions && (
+          <div className="flex flex-wrap items-center justify-between gap-3 text-xs pt-1">
+            <label className="inline-flex items-center gap-2 min-h-[34px] text-slate-700 dark:text-slate-300 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={optimizeOrder}
+                disabled={travelMode === 'TRANSIT'}
+                onChange={onToggleOptimizeOrder}
+                className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+              />
+              Auto-optimize stop order
+            </label>
 
-          <label className="inline-flex items-center gap-2 text-slate-700 dark:text-slate-300 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={roundTrip}
-              onChange={onToggleRoundTrip}
-              className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
-            />
-            Round trip
-          </label>
-        </div>
+            <label className="inline-flex items-center gap-2 min-h-[34px] text-slate-700 dark:text-slate-300 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={roundTrip}
+                onChange={onToggleRoundTrip}
+                className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+              />
+              Round trip
+            </label>
+          </div>
+        )}
 
         {/* Live Route Metrics Summary */}
         {computedRoute && (
@@ -200,31 +217,31 @@ export const SidebarTour: React.FC<SidebarTourProps> = ({
                 onClick={onRefreshTraffic}
                 disabled={!isOnline || isComputing}
                 title="Refresh real-time traffic"
-                className="inline-flex items-center gap-1 text-xs font-medium text-teal-600 dark:text-teal-400 hover:underline disabled:opacity-50 whitespace-nowrap shrink-0"
+                className="inline-flex items-center gap-1 min-h-[32px] text-xs font-medium text-teal-600 dark:text-teal-400 hover:underline disabled:opacity-50 whitespace-nowrap shrink-0"
               >
                 <RefreshCw
                   className={`w-3 h-3 ${isComputing ? 'animate-spin' : ''}`}
                 />
-                Refresh Traffic
+                Refresh
               </button>
             </div>
 
             <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
-              <span>{displayedStops.length} school stops</span>
+              <span>{displayedStops.length} stops</span>
               <span aria-hidden="true">·</span>
               {computedRoute.trafficDelayMinutes > 0 ? (
                 <span className="text-amber-600 dark:text-amber-400 font-medium">
-                  +{computedRoute.trafficDelayMinutes} min traffic delay
+                  +{computedRoute.trafficDelayMinutes} min delay
                 </span>
               ) : (
                 <span className="text-teal-700 dark:text-teal-400">
-                  Clear traffic flow
+                  Clear traffic
                 </span>
               )}
               {computedRoute.optimizedOrderIndices.length > 0 && (
                 <>
                   <span aria-hidden="true">·</span>
-                  <span>Optimized order</span>
+                  <span>Optimized</span>
                 </>
               )}
             </div>
@@ -243,30 +260,50 @@ export const SidebarTour: React.FC<SidebarTourProps> = ({
           </div>
         )}
 
-        {routeError && (
-          <div className="p-2.5 rounded-lg border border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/30 text-xs text-red-700 dark:text-red-300">
-            {routeError}
+        {(routeError || distantStopsCount > 0) && (
+          <div className="p-3 rounded-lg border border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/30 text-xs text-red-700 dark:text-red-300 space-y-2">
+            <p>{routeError || `${distantStopsCount} stop(s) are far outside this search area.`}</p>
+            <div className="flex flex-wrap items-center gap-2">
+              {distantStopsCount > 0 && (
+                <button
+                  type="button"
+                  onClick={onRemoveDistantStops}
+                  className="px-2.5 py-1.5 rounded-md bg-red-600 text-white font-medium hover:bg-red-700 transition-colors"
+                >
+                  Remove {distantStopsCount} out-of-area stop{distantStopsCount > 1 ? 's' : ''}
+                </button>
+              )}
+              {isOnline && (
+                <button
+                  type="button"
+                  onClick={onRefreshTraffic}
+                  className="px-2.5 py-1.5 rounded-md border border-red-300 dark:border-red-800 text-red-800 dark:text-red-200 font-medium hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors"
+                >
+                  Retry Route
+                </button>
+              )}
+            </div>
           </div>
         )}
       </div>
 
       {/* Ordered Itinerary List */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto min-h-0">
         {stops.length === 0 ? (
           <div className="p-6 text-center space-y-2">
             <Navigation className="w-6 h-6 text-slate-400 mx-auto" />
             <p className="text-sm font-medium text-slate-800 dark:text-slate-200">
-              Your school tour is empty
+              Your route has no stops yet
             </p>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Add 1 or more schools from the Discover tab to build an optimized multi-stop tour route.
+              Add schools, bookstores, libraries, or other places from Discover to build a multi-stop route.
             </p>
           </div>
         ) : (
           <div className="divide-y divide-slate-200 dark:divide-slate-800">
             {/* Origin Row */}
             {origin && (
-              <div className="px-4 py-3 flex items-center gap-3 bg-slate-50/70 dark:bg-slate-900/40">
+              <div className="px-4 py-2.5 flex items-center gap-3 bg-slate-50/70 dark:bg-slate-900/40">
                 <div className="w-6 h-6 rounded-full bg-slate-900 dark:bg-slate-700 text-white flex items-center justify-center shrink-0">
                   <MapPin className="w-3.5 h-3.5" />
                 </div>
@@ -278,7 +315,7 @@ export const SidebarTour: React.FC<SidebarTourProps> = ({
               </div>
             )}
 
-            {/* School Stops */}
+            {/* Stops */}
             {displayedStops.map((stop, idx) => {
               const leg = computedRoute?.legs[idx];
               return (
@@ -294,7 +331,7 @@ export const SidebarTour: React.FC<SidebarTourProps> = ({
                       {stop.name}
                     </div>
                     <div className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
-                      {stop.address}
+                      {formatPlaceTypeLabel(stop.primaryType)} · {stop.address}
                     </div>
                     {leg && (
                       <div className="mt-1 text-xs font-mono tabular-nums text-teal-700 dark:text-teal-400">
@@ -331,9 +368,9 @@ export const SidebarTour: React.FC<SidebarTourProps> = ({
                       type="button"
                       onClick={() => onRemoveStop(stop.placeId)}
                       aria-label={`Remove ${stop.name}`}
-                      className="min-w-[36px] min-h-[36px] md:min-w-0 md:min-h-0 p-1.5 md:p-1 flex items-center justify-center rounded text-slate-400 hover:text-red-600 dark:hover:text-red-400"
+                      className="min-w-[38px] min-h-[38px] md:min-w-0 md:min-h-0 p-1.5 md:p-1 flex items-center justify-center rounded text-slate-400 hover:text-red-600 dark:hover:text-red-400"
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
+                      <Trash2 className="w-4 h-4 md:w-3.5 md:h-3.5" />
                     </button>
                   </div>
                 </div>
@@ -359,21 +396,21 @@ export const SidebarTour: React.FC<SidebarTourProps> = ({
 
       {/* Footer Actions: Save/Sync + Start Navigation */}
       {stops.length > 0 && (
-        <div className="p-4 border-t border-slate-200 dark:border-slate-800 space-y-3 bg-white dark:bg-slate-950">
+        <div className="p-3 sm:p-4 border-t border-slate-200 dark:border-slate-800 space-y-2.5 bg-white dark:bg-slate-950 shrink-0">
           <div className="flex items-center gap-2">
             <input
               type="text"
               value={tourTitle}
               onChange={e => onChangeTourTitle(e.target.value)}
               maxLength={120}
-              placeholder="Name this school tour..."
-              className="flex-1 min-h-[42px] md:min-h-0 px-3 py-2 text-base md:text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-teal-500"
+              placeholder="Name this route..."
+              className="flex-1 min-h-[40px] md:min-h-0 px-3 py-2 text-base md:text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-teal-500"
             />
             <button
               type="button"
               onClick={() => void onSaveTour()}
               disabled={isSavingTour}
-              className="inline-flex items-center justify-center gap-1.5 min-h-[42px] md:min-h-0 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 transition-colors whitespace-nowrap shrink-0"
+              className="inline-flex items-center justify-center gap-1.5 min-h-[40px] md:min-h-0 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 transition-colors whitespace-nowrap shrink-0"
             >
               {isSavingTour ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -417,7 +454,7 @@ export const SidebarTour: React.FC<SidebarTourProps> = ({
                 onMouseLeave={() => setConfirmClear(false)}
                 className="min-h-[44px] px-3 py-2.5 rounded-lg bg-red-600 text-white text-xs font-medium hover:bg-red-700 transition-colors whitespace-nowrap shrink-0"
               >
-                Confirm Clear
+                Confirm
               </button>
             ) : (
               <button

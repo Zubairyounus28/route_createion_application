@@ -62,7 +62,7 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
           No active turn-by-turn directions
         </p>
         <p className="text-xs text-slate-500 dark:text-slate-400">
-          Select at least one school stop to view leg-by-leg maneuvers and launch live Car or Bike navigation.
+          Select at least one stop (school, bookstore, library, or cafe) to view leg-by-leg maneuvers and launch live Car or Bike navigation.
         </p>
       </div>
     );
